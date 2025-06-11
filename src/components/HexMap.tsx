@@ -497,6 +497,42 @@ export default function HexMap() {
                     <symbol id="hill-arch" viewBox="-12 -8 24 16" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M-8,6 Q0,-4 8,6" />
                     </symbol>
+                    {/* Grassland: tuft of grass (three blades, base at (0,-6), blades curve up to (0,0)) */}
+                    <symbol id="grass-tuft" viewBox="-10 -10 20 20" stroke="black" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M-2,-6 Q-3,-2 0,0" />
+                      <path d="M0,-6 Q0,-2 0,0" />
+                      <path d="M2,-6 Q3,-2 0,0" />
+                    </symbol>
+                    {/* Desert: stylized rocks (three types) */}
+                    <symbol id="desert-rock1" viewBox="-10 -6 20 12" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <ellipse cx="0" cy="2" rx="5" ry="3" />
+                    </symbol>
+                    <symbol id="desert-rock2" viewBox="-10 -6 20 12" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <ellipse cx="-2" cy="2" rx="3" ry="2" />
+                      <ellipse cx="3" cy="3" rx="2" ry="1.2" />
+                    </symbol>
+                    <symbol id="desert-rock3" viewBox="-10 -6 20 12" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <ellipse cx="0" cy="3" rx="2.5" ry="1.2" />
+                      <ellipse cx="-3" cy="1" rx="1.2" ry="0.7" />
+                      <ellipse cx="3" cy="1" rx="1.2" ry="0.7" />
+                    </symbol>
+                    {/* Swamp: marsh grass/cattail */}
+                    <symbol id="swamp-marsh" viewBox="-10 -10 20 20" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="-3" y1="4" x2="-1" y2="-4" />
+                      <line x1="0" y1="4" x2="0" y2="-2" />
+                      <line x1="3" y1="4" x2="1" y2="-3" />
+                      <ellipse cx="-1" cy="-4" rx="1" ry="2" />
+                    </symbol>
+                    {/* Brush: bush/scrub */}
+                    <symbol id="brush-bush" viewBox="-10 -8 20 16" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <ellipse cx="0" cy="2" rx="6" ry="4" />
+                      <ellipse cx="-3" cy="0" rx="2" ry="1.5" />
+                      <ellipse cx="3" cy="0" rx="2" ry="1.5" />
+                    </symbol>
+                    {/* Desert: sand dot */}
+                    <symbol id="desert-dot" viewBox="-2 -2 4 4" stroke="black" strokeWidth="1" fill="none">
+                      <circle cx="0" cy="0" r="0.7" />
+                    </symbol>
                   </>
                 );
               })()}
@@ -625,10 +661,10 @@ export default function HexMap() {
                   }
                 });
                 // --- Mountain and hill brushing ---
-                // Helper to brush symbols for a given terrain type and symbol
-                function brushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number]) {
-                  // 1. Find all tiles of this terrain
-                  const terrainTiles = tiles.filter(t => t.terrain === terrain);
+                // Helper to brush symbols for a given terrain type and symbol, excluding river tiles
+                function brushTerrainSymbolsNoRivers(terrain: TerrainType, symbolId: string, sizeRange: [number, number]) {
+                  // 1. Find all tiles of this terrain that are not rivers
+                  const terrainTiles = tiles.filter(t => t.terrain === terrain && !t.river);
                   const visited = new Set<string>();
                   const clusters: any[] = [];
                   // 2. BFS to find contiguous clusters
@@ -641,7 +677,7 @@ export default function HexMap() {
                       const t = queue.shift()!;
                       cluster.push(t);
                       for (const n of getNeighbors(t, renderTileMap)) {
-                        if (n.terrain === terrain && !visited.has(n.id)) {
+                        if (n.terrain === terrain && !n.river && !visited.has(n.id)) {
                           visited.add(n.id);
                           queue.push(n);
                         }
@@ -695,7 +731,7 @@ export default function HexMap() {
                               y={py}
                               width={size}
                               height={size}
-                              transform={`translate(${-size / 2},${-size * 0.8})`}
+                              transform={`translate(${-size / 2},${-size * 0.1})`}
                               stroke="black"
                               fill="none"
                             />
@@ -707,13 +743,61 @@ export default function HexMap() {
                   });
                   return uses;
                 }
-                // Add mountain peaks and hill arches
-                const mountainUses = brushTerrainSymbols(TerrainType.MOUNTAIN, 'mountain-peak', [0.8, 1.1]);
-                const hillUses = brushTerrainSymbols(TerrainType.HILLS, 'hill-arch', [0.7, 1.0]);
+                // For grassland and desert, make symbols sparse by skipping ~60% of grid spots
+                function sparseBrushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number], skipProb: number) {
+                  const uses = brushTerrainSymbolsNoRivers(terrain, symbolId, sizeRange);
+                  // Filter out a random portion of the uses
+                  return uses.filter(() => Math.random() > skipProb);
+                }
+                // Add mountain peaks and hill arches (no rivers)
+                const mountainUses = brushTerrainSymbolsNoRivers(TerrainType.MOUNTAIN, 'mountain-peak', [0.8, 1.1]);
+                const hillUses = brushTerrainSymbolsNoRivers(TerrainType.HILLS, 'hill-arch', [0.7, 1.0]);
+                // Add grassland, desert, swamp, and brush symbols (no rivers)
+                const grasslandUses = sparseBrushTerrainSymbols(TerrainType.GRASSLAND, 'grass-tuft', [0.7, 1.0], 0.6);
+                // For desert, randomly choose one of three rock symbols for each spot
+                function denseDesertSymbols() {
+                  // Use the grid logic but do not skip any points
+                  const uses = brushTerrainSymbolsNoRivers(TerrainType.DESERT, 'desert-dot', [0.4, 0.6]);
+                  const rockTypes = ['desert-rock1', 'desert-rock2', 'desert-rock3'];
+                  return uses.map((el, i) => {
+                    // 80% dots, 20% small rocks
+                    if (Math.random() < 0.8) {
+                      return {
+                        ...el,
+                        props: {
+                          ...el.props,
+                          href: '#desert-dot',
+                          width: 4,
+                          height: 4,
+                          transform: `translate(-2,-2)`
+                        }
+                      };
+                    } else {
+                      const type = rockTypes[Math.floor(Math.random() * rockTypes.length)];
+                      return {
+                        ...el,
+                        props: {
+                          ...el.props,
+                          href: `#${type}`,
+                          width: 8,
+                          height: 8,
+                          transform: `translate(-4,-4)`
+                        }
+                      };
+                    }
+                  });
+                }
+                const desertUses = denseDesertSymbols();
+                const swampUses = brushTerrainSymbolsNoRivers(TerrainType.SWAMP, 'swamp-marsh', [0.7, 1.0]);
+                const brushUses = brushTerrainSymbolsNoRivers(TerrainType.BRUSH, 'brush-bush', [0.7, 1.0]);
                 return [
                   ...treeUses,
                   ...mountainUses,
                   ...hillUses,
+                  ...grasslandUses,
+                  ...desertUses,
+                  ...swampUses,
+                  ...brushUses,
                 ];
               })()}
             </g>
