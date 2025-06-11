@@ -19,6 +19,7 @@ interface HexTile {
   q: number; // axial coordinates
   r: number;
   terrain: TerrainType;
+  river?: boolean;
 }
 
 interface Point {
@@ -342,6 +343,130 @@ export default function HexMap() {
         if (rand() < 0.2) { // Reduced chance of desert spread
           tile.terrain = TerrainType.DESERT;
         }
+      }
+    }
+
+    // --- River Generation ---
+    function isAdjacentToSea(tile: HexTile) {
+      return getNeighbors(tile, tileMap).some(n => n.terrain === TerrainType.WATER);
+    }
+
+    function terrainElevation(terrain: TerrainType) {
+      switch (terrain) {
+        case TerrainType.MOUNTAIN: return 5;
+        case TerrainType.HILLS: return 4;
+        case TerrainType.FOREST: return 3;
+        case TerrainType.GRASSLAND: return 2;
+        case TerrainType.DESERT: return 1;
+        default: return 0;
+      }
+    }
+
+    // Helper: check if a path would create a river loop or connection that could cut off land
+    function wouldCreateRiverLoop(path: HexTile[]): boolean {
+      // Check if any tile in the path is adjacent to an existing river
+      for (const tile of path) {
+        const neighbors = getNeighbors(tile, tileMap);
+        for (const n of neighbors) {
+          if (n.river && !path.includes(n)) {
+            // If this neighbor is a river and not part of our path, we might create a loop
+            // Check if this would create a land bridge between rivers
+            const landNeighbors = neighbors.filter(n => n.terrain !== TerrainType.WATER && !n.river);
+            if (landNeighbors.length <= 1) {
+              return true; // This would create a potential land cutoff
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    // Helper: check if all land tiles are connected (BFS)
+    function isIslandConnected() {
+      const land = newTiles.filter(t => t.terrain !== TerrainType.WATER);
+      if (land.length === 0) return true;
+      const visited = new Set<string>();
+      const queue = [land[0]];
+      visited.add(land[0].id);
+      while (queue.length) {
+        const t = queue.shift()!;
+        for (const n of getNeighbors(t, tileMap)) {
+          if (n.terrain !== TerrainType.WATER && !visited.has(n.id)) {
+            visited.add(n.id);
+            queue.push(n);
+          }
+        }
+      }
+      return visited.size === land.length;
+    }
+
+    // Find river sources (mountains not adjacent to sea)
+    const riverSources = landTiles.filter(t => 
+      t.terrain === TerrainType.MOUNTAIN && 
+      !isAdjacentToSea(t) &&
+      // Ensure source has at least one non-mountain neighbor
+      getNeighbors(t, tileMap).some(n => n.terrain !== TerrainType.MOUNTAIN)
+    );
+
+    // Calculate number of rivers based on map size
+    const riverCount = Math.max(1, Math.floor(landTiles.length / 100));
+    let riversMade = 0;
+    let riverAttempts = 0;
+
+    while (riversMade < riverCount && riverAttempts < 30) {
+      riverAttempts++;
+      const source = riverSources[Math.floor(rand() * riverSources.length)];
+      if (!source) break;
+
+      // BFS to find shortest path to sea, preferring lower elevation
+      const queue: {tile: HexTile, path: HexTile[]}[] = [{tile: source, path: [source]}];
+      const visited = new Set([source.id]);
+      let foundPath: HexTile[] | null = null;
+
+      while (queue.length) {
+        // Sort queue by elevation (lowest first)
+        queue.sort((a, b) => terrainElevation(a.tile.terrain) - terrainElevation(b.tile.terrain));
+        const {tile, path} = queue.shift()!;
+
+        if (isAdjacentToSea(tile)) {
+          foundPath = path;
+          break;
+        }
+
+        // Get neighbors, preferring lower elevation
+        const neighbors = getNeighbors(tile, tileMap)
+          .filter(n => n.terrain !== TerrainType.WATER && !n.river && !visited.has(n.id))
+          .sort((a, b) => terrainElevation(a.terrain) - terrainElevation(b.terrain));
+
+        for (const n of neighbors) {
+          visited.add(n.id);
+          queue.push({tile: n, path: [...path, n]});
+        }
+      }
+
+      if (foundPath && foundPath.length > 3) {
+        // Check if this path would create a problematic river connection
+        if (wouldCreateRiverLoop(foundPath)) {
+          continue; // Skip this path and try another
+        }
+
+        // Mark river
+        for (const t of foundPath) t.river = true;
+
+        // Check connectivity
+        if (isIslandConnected()) {
+          riversMade++;
+        } else {
+          // Undo river if it splits the island
+          for (const t of foundPath) t.river = false;
+        }
+      }
+    }
+
+    // Convert river tiles to water
+    for (const tile of newTiles) {
+      if (tile.river) {
+        tile.terrain = TerrainType.WATER;
       }
     }
 
