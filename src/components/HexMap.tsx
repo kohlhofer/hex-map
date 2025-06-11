@@ -19,7 +19,6 @@ interface HexTile {
   q: number; // axial coordinates
   r: number;
   terrain: TerrainType;
-  river?: boolean;
 }
 
 interface Point {
@@ -109,7 +108,7 @@ const getTerrainColor = (terrain: TerrainType): string => {
     case TerrainType.MOUNTAIN:
       return '#8B8B8B'; // desaturated gray
     case TerrainType.HILLS:
-      return '#A69B8F'; // desaturated brown
+      return '#9CAF7F'; // same as grassland
     case TerrainType.SWAMP:
       return '#8B9E6B'; // desaturated olive
     case TerrainType.BRUSH:
@@ -151,8 +150,8 @@ function getSymbolColor(terrain: TerrainType): string {
 export default function HexMap() {
   const [tiles, setTiles] = useState<HexTile[]>([]);
   const [tileMap, setTileMap] = useState<Record<string, HexTile>>({});
-  const [mapWidth, setMapWidth] = useState(20); // width of the map (in hexes)
-  const [mapHeight, setMapHeight] = useState(14); // height of the map (in hexes)
+  const [mapWidth, setMapWidth] = useState(35); // width of the map (in hexes)
+  const [mapHeight, setMapHeight] = useState(20); // height of the map (in hexes)
   const [hexSize, setHexSize] = useState(20); // size of hexagons in pixels (smaller)
   const [seed, setSeed] = useState('12345');
   const [seedInput, setSeedInput] = useState('12345');
@@ -243,13 +242,13 @@ export default function HexMap() {
     // Set cluster counts and sizes per terrain
     const clusterSettings: Record<TerrainType, {count: number, size: number}> = {
       [TerrainType.FOREST]: { count: Math.max(2, Math.floor(landTiles.length / 40)), size: Math.max(8, Math.floor(landTiles.length / 12)) },
-      [TerrainType.DESERT]: { count: Math.max(2, Math.floor(landTiles.length / 50)), size: Math.max(6, Math.floor(landTiles.length / 15)) },
+      [TerrainType.DESERT]: { count: Math.max(1, Math.floor(landTiles.length / 80)), size: Math.max(4, Math.floor(landTiles.length / 20)) },
       [TerrainType.MOUNTAIN]: { count: Math.max(1, Math.floor(landTiles.length / 80)), size: Math.max(3, Math.floor(landTiles.length / 30)) },
       [TerrainType.HILLS]: { count: Math.max(1, Math.floor(landTiles.length / 60)), size: Math.max(4, Math.floor(landTiles.length / 20)) },
-      [TerrainType.SWAMP]: { count: Math.max(1, Math.floor(landTiles.length / 60)), size: Math.max(4, Math.floor(landTiles.length / 18)) },
-      [TerrainType.BRUSH]: { count: Math.max(1, Math.floor(landTiles.length / 60)), size: Math.max(4, Math.floor(landTiles.length / 18)) },
+      [TerrainType.SWAMP]: { count: Math.max(1, Math.floor(landTiles.length / 100)), size: Math.max(3, Math.floor(landTiles.length / 25)) },
+      [TerrainType.BRUSH]: { count: Math.max(1, Math.floor(landTiles.length / 80)), size: Math.max(4, Math.floor(landTiles.length / 20)) },
       [TerrainType.WATER]: { count: 0, size: 0 },
-      [TerrainType.GRASSLAND]: { count: 0, size: 0 },
+      [TerrainType.GRASSLAND]: { count: Math.max(2, Math.floor(landTiles.length / 50)), size: Math.max(6, Math.floor(landTiles.length / 15)) },
     };
     // Seed clusters
     for (const terrain of clusterTerrains) {
@@ -261,7 +260,7 @@ export default function HexMap() {
         do {
           seedTile = landTiles[Math.floor(rand() * landTiles.length)];
           tries++;
-        } while (seedTile.terrain !== TerrainType.GRASSLAND && tries < 10);
+        } while (seedTile.terrain !== TerrainType.GRASSLAND && tries < 20);
         if (!seedTile || seedTile.terrain !== TerrainType.GRASSLAND) continue;
         // --- Custom cluster seeding for SWAMP and BRUSH ---
         if (terrain === TerrainType.SWAMP) {
@@ -269,7 +268,7 @@ export default function HexMap() {
           const swampCandidates = landTiles.filter(t =>
             t.terrain === TerrainType.GRASSLAND &&
             getNeighbors(t, tileMap).some(n =>
-              n.terrain === TerrainType.WATER || n.river || n.terrain === TerrainType.FOREST
+              n.terrain === TerrainType.WATER || n.terrain === TerrainType.FOREST
             )
           );
           if (swampCandidates.length > 0) {
@@ -280,7 +279,7 @@ export default function HexMap() {
           const brushCandidates = landTiles.filter(t =>
             (t.terrain === TerrainType.GRASSLAND || t.terrain === TerrainType.HILLS) &&
             getNeighbors(t, tileMap).some(n => n.terrain === TerrainType.DESERT) &&
-            !getNeighbors(t, tileMap).some(n => n.terrain === TerrainType.WATER || n.river)
+            !getNeighbors(t, tileMap).some(n => n.terrain === TerrainType.WATER)
           );
           if (brushCandidates.length > 0) {
             seedTile = brushCandidates[Math.floor(rand() * brushCandidates.length)];
@@ -289,7 +288,9 @@ export default function HexMap() {
         seedTile.terrain = terrain;
         // Grow cluster
         let frontier = [seedTile];
-        for (let j = 0; j < size; j++) {
+        // Adjust size based on terrain type
+        const adjustedSize = terrain === TerrainType.SWAMP ? Math.floor(size * 0.7) : size;
+        for (let j = 0; j < adjustedSize; j++) {
           if (frontier.length === 0) break;
           const current = frontier[Math.floor(rand() * frontier.length)];
           // Get unassigned grassland neighbors
@@ -297,8 +298,12 @@ export default function HexMap() {
           // For SWAMP, allow to grow into forest or river-adjacent tiles
           if (terrain === TerrainType.SWAMP) {
             neighbors = neighbors.concat(getNeighbors(current, tileMap).filter(n =>
-              n.terrain === TerrainType.FOREST && !n.river
+              n.terrain === TerrainType.FOREST
             ));
+            // Make swamp growth more restrictive
+            if (Math.random() < 0.4) {
+              frontier = frontier.filter(t => t !== current);
+            }
           }
           // For BRUSH, allow to grow into hills
           if (terrain === TerrainType.BRUSH) {
@@ -334,84 +339,12 @@ export default function HexMap() {
       if (tile.terrain !== TerrainType.GRASSLAND && tile.terrain !== TerrainType.HILLS) continue;
       const neighbors = getNeighbors(tile, tileMap).filter(n => n.terrain === TerrainType.DESERT);
       if (neighbors.length > 0) {
-        if (rand() < 0.4) {
+        if (rand() < 0.2) { // Reduced chance of desert spread
           tile.terrain = TerrainType.DESERT;
         }
       }
     }
 
-    // --- River Generation (improved: BFS path, connectivity check) ---
-    function isAdjacentToSea(tile: HexTile) {
-      return getNeighbors(tile, tileMap).some(n => n.terrain === TerrainType.WATER);
-    }
-    function terrainElevation(terrain: TerrainType) {
-      switch (terrain) {
-        case TerrainType.MOUNTAIN: return 5;
-        case TerrainType.HILLS: return 4;
-        case TerrainType.FOREST: return 3;
-        case TerrainType.GRASSLAND: return 2;
-        case TerrainType.DESERT: return 1;
-        default: return 0;
-      }
-    }
-    // Helper: check if all land tiles are connected (BFS)
-    function isIslandConnected() {
-      const land = newTiles.filter(t => t.terrain !== TerrainType.WATER);
-      if (land.length === 0) return true;
-      const visited = new Set<string>();
-      const queue = [land[0]];
-      visited.add(land[0].id);
-      while (queue.length) {
-        const t = queue.shift()!;
-        for (const n of getNeighbors(t, tileMap)) {
-          if (n.terrain !== TerrainType.WATER && !visited.has(n.id)) {
-            visited.add(n.id);
-            queue.push(n);
-          }
-        }
-      }
-      return visited.size === land.length;
-    }
-    // Find river sources (mountains not adjacent to sea)
-    const riverSources = landTiles.filter(t => t.terrain === TerrainType.MOUNTAIN && !isAdjacentToSea(t));
-    const riverCount = Math.max(1, Math.floor(landTiles.length / 80));
-    let riversMade = 0;
-    let riverAttempts = 0;
-    while (riversMade < riverCount && riverAttempts < 30) {
-      riverAttempts++;
-      const source = riverSources[Math.floor(rand() * riverSources.length)];
-      if (!source) break;
-      // BFS to find shortest path to sea, preferring lower elevation
-      const queue: {tile: HexTile, path: HexTile[]}[] = [{tile: source, path: [source]}];
-      const visited = new Set([source.id]);
-      let foundPath: HexTile[] | null = null;
-      while (queue.length) {
-        // Sort queue by elevation (lowest first)
-        queue.sort((a, b) => terrainElevation(a.tile.terrain) - terrainElevation(b.tile.terrain));
-        const {tile, path} = queue.shift()!;
-        if (isAdjacentToSea(tile)) {
-          foundPath = path;
-          break;
-        }
-        for (const n of getNeighbors(tile, tileMap)) {
-          if (n.terrain !== TerrainType.WATER && !n.river && !visited.has(n.id)) {
-            visited.add(n.id);
-            queue.push({tile: n, path: [...path, n]});
-          }
-        }
-      }
-      if (foundPath && foundPath.length > 3) {
-        // Mark river
-        for (const t of foundPath) t.river = true;
-        // Check connectivity
-        if (isIslandConnected()) {
-          riversMade++;
-        } else {
-          // Undo river
-          for (const t of foundPath) t.river = false;
-        }
-      }
-    }
     setTiles(newTiles);
     setTileMap(tileMap);
   };
@@ -496,8 +429,8 @@ export default function HexMap() {
   };
 
   // Helper to brush symbol positions for a given terrain type, excluding river tiles
-  function brushTerrainSymbolPositionsNoRivers(terrain: TerrainType, sizeRange: [number, number]) {
-    const terrainTiles = tiles.filter(t => t.terrain === terrain && !t.river);
+  function brushTerrainSymbolPositions(terrain: TerrainType, sizeRange: [number, number]) {
+    const terrainTiles = tiles.filter(t => t.terrain === terrain);
     const visited = new Set<string>();
     const clusters: any[] = [];
     // 2. BFS to find contiguous clusters
@@ -510,7 +443,7 @@ export default function HexMap() {
         const t = queue.shift()!;
         cluster.push(t);
         for (const n of getNeighbors(t, renderTileMap)) {
-          if (n.terrain === terrain && !n.river && !visited.has(n.id)) {
+          if (n.terrain === terrain && !visited.has(n.id)) {
             visited.add(n.id);
             queue.push(n);
           }
@@ -679,14 +612,14 @@ export default function HexMap() {
                       <ellipse cx="3" cy="1" rx="1.2" ry="0.7" />
                     </symbol>
                     {/* Swamp: marsh grass/cattail */}
-                    <symbol id="swamp-marsh" viewBox="-10 -10 20 20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="swamp-marsh" viewBox="-10 -10 20 20" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="-3" y1="4" x2="-1" y2="-4" />
                       <line x1="0" y1="4" x2="0" y2="-2" />
                       <line x1="3" y1="4" x2="1" y2="-3" />
                       <ellipse cx="-1" cy="-4" rx="1" ry="2" />
                     </symbol>
                     {/* Brush: bush/scrub */}
-                    <symbol id="brush-bush" viewBox="-10 -8 20 16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="brush-bush" viewBox="-10 -8 20 16" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <ellipse cx="0" cy="2" rx="6" ry="4" />
                       <ellipse cx="-3" cy="0" rx="2" ry="1.5" />
                       <ellipse cx="3" cy="0" rx="2" ry="1.5" />
@@ -703,27 +636,7 @@ export default function HexMap() {
               {tiles.map((tile) => {
                 const center = axialToPixel(tile.q, tile.r);
                 const isWater = tile.terrain === TerrainType.WATER;
-                const isRiver = tile.river;
-                // Shallow water color
-                const deepWaterColor = '#4A90E2';
-                const shallowWaterColor = '#7EC8E3';
-                // Get all 6 neighbors
-                const neighbors = getNeighbors(tile, renderTileMap);
-                // Determine if this water tile is adjacent to river, desert, grassland, or swamp
-                let isShallow = false;
-                if (isWater) {
-                  isShallow = neighbors.some(n =>
-                    n.river || n.terrain === TerrainType.DESERT || n.terrain === TerrainType.GRASSLAND || n.terrain === TerrainType.SWAMP
-                  );
-                }
-                // Use shallow color for river and shallow water, deep for other water
-                const fillColor = isRiver
-                  ? shallowWaterColor
-                  : isWater && isShallow
-                    ? shallowWaterColor
-                    : isWater
-                      ? deepWaterColor
-                      : getTerrainColor(tile.terrain);
+                const fillColor = isWater ? '#4A90E2' : getTerrainColor(tile.terrain);
                 return (
                   <g key={tile.id}>
                     <polygon
@@ -827,9 +740,8 @@ export default function HexMap() {
                 });
                 // --- Mountain and hill brushing ---
                 // Helper to brush symbols for a given terrain type and symbol, excluding river tiles
-                function brushTerrainSymbolsNoRivers(terrain: TerrainType, symbolId: string, sizeRange: [number, number]) {
-                  // 1. Find all tiles of this terrain that are not rivers
-                  const terrainTiles = tiles.filter(t => t.terrain === terrain && !t.river);
+                function brushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number]) {
+                  const terrainTiles = tiles.filter(t => t.terrain === terrain);
                   const visited = new Set<string>();
                   const clusters: any[] = [];
                   // 2. BFS to find contiguous clusters
@@ -842,7 +754,7 @@ export default function HexMap() {
                       const t = queue.shift()!;
                       cluster.push(t);
                       for (const n of getNeighbors(t, renderTileMap)) {
-                        if (n.terrain === terrain && !n.river && !visited.has(n.id)) {
+                        if (n.terrain === terrain && !visited.has(n.id)) {
                           visited.add(n.id);
                           queue.push(n);
                         }
@@ -946,22 +858,22 @@ export default function HexMap() {
                 }
                 // For grassland and desert, make symbols sparse by skipping ~60% of grid spots
                 function sparseBrushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number], skipProb: number) {
-                  const uses = brushTerrainSymbolsNoRivers(terrain, symbolId, sizeRange);
+                  const uses = brushTerrainSymbols(terrain, symbolId, sizeRange);
                   // Filter out a random portion of the uses
                   return uses.filter(() => Math.random() > skipProb);
                 }
                 // Add mountain peaks and hill arches (no rivers)
-                const mountainUses = brushTerrainSymbolsNoRivers(TerrainType.MOUNTAIN, 'mountain-peak', [0.8, 1.1]);
-                const hillUses = brushTerrainSymbolsNoRivers(TerrainType.HILLS, 'hill-arch', [0.7, 1.0]);
+                const mountainUses = brushTerrainSymbols(TerrainType.MOUNTAIN, 'mountain-peak', [0.8, 1.1]);
+                const hillUses = brushTerrainSymbols(TerrainType.HILLS, 'hill-arch', [0.7, 1.0]);
                 // Add grassland, desert, swamp, and brush symbols (no rivers)
                 const grasslandUses = sparseBrushTerrainSymbols(TerrainType.GRASSLAND, 'grass-tuft', [0.7, 1.0], 0.6);
                 // For desert, randomly choose one of three rock symbols for each spot
                 function denseDesertSymbols() {
                   // Use normal size and density for desert symbols
-                  const positions = brushTerrainSymbolPositionsNoRivers(TerrainType.DESERT, [0.4, 0.6]);
+                  const positions = brushTerrainSymbolPositions(TerrainType.DESERT, [0.4, 0.6]);
                   const rockTypes = ['desert-rock1', 'desert-rock2', 'desert-rock3'];
                   const strokeColor = getSymbolColor(TerrainType.DESERT);
-                  const desertTiles = tiles.filter(t => t.terrain === TerrainType.DESERT && !t.river);
+                  const desertTiles = tiles.filter(t => t.terrain === TerrainType.DESERT);
                   console.log('Desert tiles (no river):', desertTiles.length, 'Desert symbols:', positions.length);
                   return positions.map((pos, i) => {
                     if (Math.random() < 0.8) {
@@ -999,8 +911,8 @@ export default function HexMap() {
                   });
                 }
                 const desertUses = denseDesertSymbols();
-                const swampUses = brushTerrainSymbolsNoRivers(TerrainType.SWAMP, 'swamp-marsh', [0.7, 1.0]);
-                const brushUses = brushTerrainSymbolsNoRivers(TerrainType.BRUSH, 'brush-bush', [0.7, 1.0]);
+                const swampUses = brushTerrainSymbols(TerrainType.SWAMP, 'swamp-marsh', [0.7, 1.0]);
+                const brushUses = brushTerrainSymbols(TerrainType.BRUSH, 'brush-bush', [0.7, 1.0]);
                 return [
                   ...treeUses,
                   ...mountainUses,
