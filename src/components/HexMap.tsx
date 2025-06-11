@@ -159,7 +159,7 @@ export default function HexMap() {
   // Convert axial coordinates to pixel coordinates (flat-topped, rectangular grid)
   const axialToPixel = (q: number, r: number): Point => {
     const x = hexSize * 1.5 * q;
-    const y = hexSize * Math.sqrt(3) * (r + 0.5 * (q % 2));
+    const y = hexSize * Math.sqrt(3) * 0.7 * (r + 0.5 * (q % 2)); // 30% less tall
     return { x, y };
   };
 
@@ -169,7 +169,7 @@ export default function HexMap() {
     for (let i = 0; i < 6; i++) {
       const angle = 2 * Math.PI / 6 * i;
       const x = center.x + hexSize * Math.cos(angle);
-      const y = center.y + hexSize * Math.sin(angle);
+      const y = center.y + hexSize * 0.7 * Math.sin(angle); // 30% less tall
       points.push(`${x},${y}`);
     }
     return points.join(' ');
