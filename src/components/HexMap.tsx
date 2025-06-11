@@ -27,6 +27,20 @@ interface Point {
   y: number;
 }
 
+interface TerrainSymbol {
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  type: 'evergreen' | 'broadleaf';
+}
+
+interface Hex {
+  q: number;
+  r: number;
+  terrain: TerrainType;
+}
+
 // Seeded RNG (mulberry32)
 function mulberry32(seed: number) {
   return function() {
@@ -57,6 +71,81 @@ function getNeighbors(tile: HexTile, tileMap: Record<string, HexTile>) {
   return directions
     .map(([dq, dr]) => tileMap[`${tile.q + dq},${tile.r + dr}`])
     .filter(n => n);
+}
+
+const createGrid = (size: number): { x: number; y: number }[] => {
+  const points: { x: number; y: number }[] = [];
+  for (let x = 0; x < 1; x += size) {
+    for (let y = 0; y < 1; y += size) {
+      points.push({ x, y });
+    }
+  }
+  return points;
+};
+
+// Helper to darken a hex color by a given factor (0-1)
+function darkenColor(hex: string, factor: number = 0.5): string {
+  hex = hex.replace('#', '');
+  let r = parseInt(hex.substring(0, 2), 16);
+  let g = parseInt(hex.substring(2, 4), 16);
+  let b = parseInt(hex.substring(4, 6), 16);
+  r = Math.floor(r * factor);
+  g = Math.floor(g * factor);
+  b = Math.floor(b * factor);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// Get color for terrain type
+const getTerrainColor = (terrain: TerrainType): string => {
+  switch (terrain) {
+    case TerrainType.WATER:
+      return '#4A90E2';
+    case TerrainType.GRASSLAND:
+      return '#9CAF7F'; // desaturated green
+    case TerrainType.FOREST:
+      return '#6B8E6B'; // desaturated dark green
+    case TerrainType.DESERT:
+      return '#D4B483'; // desaturated sand
+    case TerrainType.MOUNTAIN:
+      return '#8B8B8B'; // desaturated gray
+    case TerrainType.HILLS:
+      return '#A69B8F'; // desaturated brown
+    case TerrainType.SWAMP:
+      return '#8B9E6B'; // desaturated olive
+    case TerrainType.BRUSH:
+      return '#B2A76B'; // already desaturated
+    default:
+      return '#000000';
+  }
+};
+
+// Helper to get a good symbol color for each terrain
+function getSymbolColor(terrain: TerrainType): string {
+  const base = getTerrainColor(terrain);
+  let color: string;
+  switch (terrain) {
+    case TerrainType.DESERT:
+      color = '#7a5a2b'; // Strong brown for desert symbols
+      break;
+    case TerrainType.FOREST:
+    case TerrainType.MOUNTAIN:
+      color = darkenColor(base, 0.6);
+      break;
+    case TerrainType.GRASSLAND:
+    case TerrainType.HILLS:
+    case TerrainType.SWAMP:
+    case TerrainType.BRUSH:
+      color = darkenColor(base, 0.65);
+      break;
+    default:
+      color = darkenColor(base, 0.7);
+  }
+  // Minimum contrast: if color is too close to background, use #333
+  const rgb = parseInt(color.replace('#', ''), 16);
+  if (rgb > 0xcccccc || rgb < 0x222222) {
+    color = '#333';
+  }
+  return color;
 }
 
 export default function HexMap() {
@@ -371,30 +460,6 @@ export default function HexMap() {
     return terrains[Math.floor(Math.random() * terrains.length)];
   };
 
-  // Get color for terrain type
-  const getTerrainColor = (terrain: TerrainType): string => {
-    switch (terrain) {
-      case TerrainType.WATER:
-        return '#4A90E2';
-      case TerrainType.GRASSLAND:
-        return '#9CAF7F'; // desaturated green
-      case TerrainType.FOREST:
-        return '#6B8E6B'; // desaturated dark green
-      case TerrainType.DESERT:
-        return '#D4B483'; // desaturated sand
-      case TerrainType.MOUNTAIN:
-        return '#8B8B8B'; // desaturated gray
-      case TerrainType.HILLS:
-        return '#A69B8F'; // desaturated brown
-      case TerrainType.SWAMP:
-        return '#8B9E6B'; // desaturated olive
-      case TerrainType.BRUSH:
-        return '#B2A76B'; // already desaturated
-      default:
-        return '#000000';
-    }
-  };
-
   useEffect(() => {
     generateMap();
   }, [mapWidth, mapHeight, seed]);
@@ -402,6 +467,103 @@ export default function HexMap() {
   // Build a local map from tiles for rendering
   const renderTileMap: Record<string, HexTile> = {};
   tiles.forEach(t => { renderTileMap[`${t.q},${t.r}`] = t; });
+
+  const generateTerrainOverlay = (terrain: TerrainType, hex: Hex): TerrainSymbol[] => {
+    switch (terrain) {
+      case 'forest':
+        // Create a denser grid for forests
+        const forestGridSize = 0.15; // Smaller grid cells for more symbols
+        const forestGrid = createGrid(forestGridSize);
+        const forestSymbols = forestGrid
+          .filter(() => Math.random() < 0.85) // Higher chance of placing a symbol
+          .map(({ x, y }): TerrainSymbol => {
+            const jitterX = (Math.random() - 0.5) * forestGridSize * 0.5;
+            const jitterY = (Math.random() - 0.5) * forestGridSize * 0.5;
+            const scale = 0.8 + Math.random() * 0.4; // Slightly smaller base size
+            const rotation = Math.random() * 360;
+            return {
+              x: x + jitterX,
+              y: y + jitterY,
+              scale,
+              rotation,
+              type: Math.random() < 0.6 ? 'evergreen' : 'broadleaf' // More evergreens
+            };
+          });
+        return forestSymbols;
+      default:
+        return [];
+    }
+  };
+
+  // Helper to brush symbol positions for a given terrain type, excluding river tiles
+  function brushTerrainSymbolPositionsNoRivers(terrain: TerrainType, sizeRange: [number, number]) {
+    const terrainTiles = tiles.filter(t => t.terrain === terrain && !t.river);
+    const visited = new Set<string>();
+    const clusters: any[] = [];
+    // 2. BFS to find contiguous clusters
+    for (const tile of terrainTiles) {
+      if (visited.has(tile.id)) continue;
+      const cluster: any[] = [];
+      const queue = [tile];
+      visited.add(tile.id);
+      while (queue.length) {
+        const t = queue.shift()!;
+        cluster.push(t);
+        for (const n of getNeighbors(t, renderTileMap)) {
+          if (n.terrain === terrain && !n.river && !visited.has(n.id)) {
+            visited.add(n.id);
+            queue.push(n);
+          }
+        }
+      }
+      clusters.push(cluster);
+    }
+    // 3. For each cluster, scatter symbol positions
+    const positions: { x: number; y: number; size: number }[] = [];
+    clusters.forEach(cluster => {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const t of cluster) {
+        const { x, y } = axialToPixel(t.q, t.r);
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+      const spacing = hexSize * 0.85;
+      const gridMinX = minX - spacing * 0.5;
+      const gridMaxX = maxX + spacing * 0.5;
+      const gridMinY = minY - spacing * 0.5;
+      const gridMaxY = maxY + spacing * 0.5;
+      let rowIdx = 0;
+      for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
+        for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) {
+          const jitterX = (Math.random() - 0.5) * hexSize * 0.35;
+          const jitterY = (Math.random() - 0.5) * hexSize * 0.35;
+          const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
+          const px = gx + jitterX;
+          const py = gy + jitterY + offsetY;
+          // Find the nearest terrain tile center
+          let nearest: HexTile | null = null;
+          let nearestDist = Infinity;
+          for (const t of cluster) {
+            const { x, y } = axialToPixel(t.q, t.r);
+            const dist = (px - x) ** 2 + (py - y) ** 2;
+            if (dist < nearestDist) {
+              nearest = t;
+              nearestDist = dist;
+            }
+          }
+          if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
+            const [minS, maxS] = sizeRange;
+            const size = hexSize * (minS + Math.random() * (maxS - minS));
+            positions.push({ x: px, y: py, size });
+          }
+        }
+        rowIdx++;
+      }
+    });
+    return positions;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 py-8">
@@ -479,58 +641,58 @@ export default function HexMap() {
                       <rect x={clipX} y={clipY} width={clipWidth} height={clipHeight} />
                     </clipPath>
                     {/* Simplified evergreen tree symbol */}
-                    <symbol id="forest-evergreen" viewBox="-10 -16 20 32" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="forest-evergreen" viewBox="-10 -16 20 32" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="0" y1="12" x2="0" y2="-12" />
                       <polyline points="0,-12 -4,0 4,0 0,-12" />
                     </symbol>
                     {/* Broadleaf tree symbol: circle with trunk */}
-                    <symbol id="forest-broadleaf" viewBox="-10 -14 20 28" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="forest-broadleaf" viewBox="-10 -14 20 28" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="0" y1="10" x2="0" y2="2" />
                       <circle cx="0" cy="-2" r="6" />
                     </symbol>
                     {/* Stylized mountain peak symbol */}
-                    <symbol id="mountain-peak" viewBox="-12 -12 24 24" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="mountain-peak" viewBox="-12 -12 24 24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="-10,10 0,-10 6,0 10,6" />
                       <polyline points="0,-10 2,-2 6,0" />
                     </symbol>
                     {/* Stylized hill symbol: gentle arch */}
-                    <symbol id="hill-arch" viewBox="-12 -8 24 16" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="hill-arch" viewBox="-12 -8 24 16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M-8,6 Q0,-4 8,6" />
                     </symbol>
                     {/* Grassland: tuft of grass (three blades, base at (0,-6), blades curve up to (0,0)) */}
-                    <symbol id="grass-tuft" viewBox="-10 -10 20 20" stroke="black" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="grass-tuft" viewBox="-10 -10 20 20" stroke="currentColor" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M-2,-6 Q-3,-2 0,0" />
                       <path d="M0,-6 Q0,-2 0,0" />
                       <path d="M2,-6 Q3,-2 0,0" />
                     </symbol>
                     {/* Desert: stylized rocks (three types) */}
-                    <symbol id="desert-rock1" viewBox="-10 -6 20 12" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="desert-rock1" viewBox="-10 -6 20 12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <ellipse cx="0" cy="2" rx="5" ry="3" />
                     </symbol>
-                    <symbol id="desert-rock2" viewBox="-10 -6 20 12" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="desert-rock2" viewBox="-10 -6 20 12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <ellipse cx="-2" cy="2" rx="3" ry="2" />
                       <ellipse cx="3" cy="3" rx="2" ry="1.2" />
                     </symbol>
-                    <symbol id="desert-rock3" viewBox="-10 -6 20 12" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="desert-rock3" viewBox="-10 -6 20 12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <ellipse cx="0" cy="3" rx="2.5" ry="1.2" />
                       <ellipse cx="-3" cy="1" rx="1.2" ry="0.7" />
                       <ellipse cx="3" cy="1" rx="1.2" ry="0.7" />
                     </symbol>
                     {/* Swamp: marsh grass/cattail */}
-                    <symbol id="swamp-marsh" viewBox="-10 -10 20 20" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="swamp-marsh" viewBox="-10 -10 20 20" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="-3" y1="4" x2="-1" y2="-4" />
                       <line x1="0" y1="4" x2="0" y2="-2" />
                       <line x1="3" y1="4" x2="1" y2="-3" />
                       <ellipse cx="-1" cy="-4" rx="1" ry="2" />
                     </symbol>
                     {/* Brush: bush/scrub */}
-                    <symbol id="brush-bush" viewBox="-10 -8 20 16" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <symbol id="brush-bush" viewBox="-10 -8 20 16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <ellipse cx="0" cy="2" rx="6" ry="4" />
                       <ellipse cx="-3" cy="0" rx="2" ry="1.5" />
                       <ellipse cx="3" cy="0" rx="2" ry="1.5" />
                     </symbol>
                     {/* Desert: sand dot */}
-                    <symbol id="desert-dot" viewBox="-2 -2 4 4" stroke="black" strokeWidth="1" fill="none">
+                    <symbol id="desert-dot" viewBox="-2 -2 4 4" stroke="currentColor" strokeWidth="1" fill="none">
                       <circle cx="0" cy="0" r="0.7" />
                     </symbol>
                   </>
@@ -642,18 +804,21 @@ export default function HexMap() {
                         const size = hexSize * (0.85 + Math.random() * 0.15);
                         // Randomly choose tree type: evergreen or broadleaf
                         const treeType = Math.random() < 0.5 ? 'forest-evergreen' : 'forest-broadleaf';
+                        // Use darkened forest color
+                        const strokeColor = getSymbolColor(TerrainType.FOREST);
                         treeUses.push(
-                          <use
-                            key={`tree-${cluster[0].id}-${gx},${gy}`}
-                            href={`#${treeType}`}
-                            x={px}
-                            y={py}
-                            width={size}
-                            height={size}
-                            transform={`translate(${-size / 2},${-size * 0.8})`}
-                            stroke="black"
-                            fill="none"
-                          />
+                          <g key={`tree-${cluster[0].id}-${gx},${gy}`} style={{ color: strokeColor }}>
+                            <use
+                              href={`#${treeType}`}
+                              x={px}
+                              y={py}
+                              width={size}
+                              height={size}
+                              transform={`translate(${-size / 2},${-size * 0.8})`}
+                              stroke={strokeColor}
+                              fill="none"
+                            />
+                          </g>
                         );
                       }
                     }
@@ -756,18 +921,21 @@ export default function HexMap() {
                             default:
                               transform = `translate(${-size / 2},${-size * 0.5})`;
                           }
+                          // Use darkened color for this terrain
+                          const strokeColor = getSymbolColor(terrain);
                           uses.push(
-                            <use
-                              key={`${symbolId}-${cluster[0].id}-${gx},${gy}`}
-                              href={`#${symbolId}`}
-                              x={px}
-                              y={py}
-                              width={size}
-                              height={size}
-                              transform={transform}
-                              stroke="black"
-                              fill="none"
-                            />
+                            <g key={`${symbolId}-${cluster[0].id}-${gx},${gy}`} style={{ color: strokeColor }}>
+                              <use
+                                href={`#${symbolId}`}
+                                x={px}
+                                y={py}
+                                width={size}
+                                height={size}
+                                transform={transform}
+                                stroke={strokeColor}
+                                fill="none"
+                              />
+                            </g>
                           );
                         }
                       }
@@ -789,34 +957,44 @@ export default function HexMap() {
                 const grasslandUses = sparseBrushTerrainSymbols(TerrainType.GRASSLAND, 'grass-tuft', [0.7, 1.0], 0.6);
                 // For desert, randomly choose one of three rock symbols for each spot
                 function denseDesertSymbols() {
-                  // Use the grid logic but do not skip any points
-                  const uses = brushTerrainSymbolsNoRivers(TerrainType.DESERT, 'desert-dot', [0.4, 0.6]);
+                  // Use normal size and density for desert symbols
+                  const positions = brushTerrainSymbolPositionsNoRivers(TerrainType.DESERT, [0.4, 0.6]);
                   const rockTypes = ['desert-rock1', 'desert-rock2', 'desert-rock3'];
-                  return uses.map((el, i) => {
-                    // 80% dots, 20% small rocks
+                  const strokeColor = getSymbolColor(TerrainType.DESERT);
+                  const desertTiles = tiles.filter(t => t.terrain === TerrainType.DESERT && !t.river);
+                  console.log('Desert tiles (no river):', desertTiles.length, 'Desert symbols:', positions.length);
+                  return positions.map((pos, i) => {
                     if (Math.random() < 0.8) {
-                      return {
-                        ...el,
-                        props: {
-                          ...el.props,
-                          href: '#desert-dot',
-                          width: 4,
-                          height: 4,
-                          transform: `translate(-2,-2)`
-                        }
-                      };
+                      return (
+                        <g key={i} style={{ color: strokeColor }}>
+                          <use
+                            href="#desert-dot"
+                            x={pos.x}
+                            y={pos.y}
+                            width={4}
+                            height={4}
+                            transform={`translate(-2,-2)`}
+                            stroke={strokeColor}
+                            fill="none"
+                          />
+                        </g>
+                      );
                     } else {
                       const type = rockTypes[Math.floor(Math.random() * rockTypes.length)];
-                      return {
-                        ...el,
-                        props: {
-                          ...el.props,
-                          href: `#${type}`,
-                          width: 8,
-                          height: 8,
-                          transform: `translate(-4,-4)`
-                        }
-                      };
+                      return (
+                        <g key={i} style={{ color: strokeColor }}>
+                          <use
+                            href={`#${type}`}
+                            x={pos.x}
+                            y={pos.y}
+                            width={8}
+                            height={8}
+                            transform={`translate(-4,-4)`}
+                            stroke={strokeColor}
+                            fill="none"
+                          />
+                        </g>
+                      );
                     }
                   });
                 }
@@ -849,30 +1027,44 @@ export default function HexMap() {
                 <svg className="w-4 h-4" viewBox="-10 -10 20 20">
                   {terrain === TerrainType.FOREST && (
                     <>
-                      <use href="#forest-evergreen" width="16" height="16" transform="translate(-8,-8)" />
-                      <use href="#forest-broadleaf" width="16" height="16" transform="translate(0,-8)" />
+                      <g style={{ color: getSymbolColor(TerrainType.FOREST) }}>
+                        <use href="#forest-evergreen" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.FOREST)} />
+                        <use href="#forest-broadleaf" width="16" height="16" transform="translate(0,-8)" stroke={getSymbolColor(TerrainType.FOREST)} />
+                      </g>
                     </>
                   )}
                   {terrain === TerrainType.MOUNTAIN && (
-                    <use href="#mountain-peak" width="16" height="16" transform="translate(-8,-8)" />
+                    <g style={{ color: getSymbolColor(TerrainType.MOUNTAIN) }}>
+                      <use href="#mountain-peak" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.MOUNTAIN)} />
+                    </g>
                   )}
                   {terrain === TerrainType.HILLS && (
-                    <use href="#hill-arch" width="16" height="16" transform="translate(-8,-8)" />
+                    <g style={{ color: getSymbolColor(TerrainType.HILLS) }}>
+                      <use href="#hill-arch" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.HILLS)} />
+                    </g>
                   )}
                   {terrain === TerrainType.GRASSLAND && (
-                    <use href="#grass-tuft" width="16" height="16" transform="translate(-8,-8)" />
+                    <g style={{ color: getSymbolColor(TerrainType.GRASSLAND) }}>
+                      <use href="#grass-tuft" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.GRASSLAND)} />
+                    </g>
                   )}
                   {terrain === TerrainType.DESERT && (
                     <>
-                      <use href="#desert-dot" width="4" height="4" transform="translate(-8,-8)" />
-                      <use href="#desert-rock1" width="8" height="8" transform="translate(0,-8)" />
+                      <g style={{ color: getSymbolColor(TerrainType.DESERT) }}>
+                        <use href="#desert-dot" width="4" height="4" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.DESERT)} />
+                        <use href="#desert-rock1" width="8" height="8" transform="translate(0,-8)" stroke={getSymbolColor(TerrainType.DESERT)} />
+                      </g>
                     </>
                   )}
                   {terrain === TerrainType.SWAMP && (
-                    <use href="#swamp-marsh" width="16" height="16" transform="translate(-8,-8)" />
+                    <g style={{ color: getSymbolColor(TerrainType.SWAMP) }}>
+                      <use href="#swamp-marsh" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.SWAMP)} />
+                    </g>
                   )}
                   {terrain === TerrainType.BRUSH && (
-                    <use href="#brush-bush" width="16" height="16" transform="translate(-8,-8)" />
+                    <g style={{ color: getSymbolColor(TerrainType.BRUSH) }}>
+                      <use href="#brush-bush" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.BRUSH)} />
+                    </g>
                   )}
                 </svg>
               )}
