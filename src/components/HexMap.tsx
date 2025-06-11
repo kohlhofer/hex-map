@@ -488,6 +488,15 @@ export default function HexMap() {
                       <line x1="0" y1="10" x2="0" y2="2" />
                       <circle cx="0" cy="-2" r="6" />
                     </symbol>
+                    {/* Stylized mountain peak symbol */}
+                    <symbol id="mountain-peak" viewBox="-12 -12 24 24" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="-10,10 0,-10 6,0 10,6" />
+                      <polyline points="0,-10 2,-2 6,0" />
+                    </symbol>
+                    {/* Stylized hill symbol: gentle arch */}
+                    <symbol id="hill-arch" viewBox="-12 -8 24 16" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M-8,6 Q0,-4 8,6" />
+                    </symbol>
                   </>
                 );
               })()}
@@ -615,7 +624,97 @@ export default function HexMap() {
                     rowIdx++;
                   }
                 });
-                return treeUses;
+                // --- Mountain and hill brushing ---
+                // Helper to brush symbols for a given terrain type and symbol
+                function brushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number]) {
+                  // 1. Find all tiles of this terrain
+                  const terrainTiles = tiles.filter(t => t.terrain === terrain);
+                  const visited = new Set<string>();
+                  const clusters: any[] = [];
+                  // 2. BFS to find contiguous clusters
+                  for (const tile of terrainTiles) {
+                    if (visited.has(tile.id)) continue;
+                    const cluster: any[] = [];
+                    const queue = [tile];
+                    visited.add(tile.id);
+                    while (queue.length) {
+                      const t = queue.shift()!;
+                      cluster.push(t);
+                      for (const n of getNeighbors(t, renderTileMap)) {
+                        if (n.terrain === terrain && !visited.has(n.id)) {
+                          visited.add(n.id);
+                          queue.push(n);
+                        }
+                      }
+                    }
+                    clusters.push(cluster);
+                  }
+                  // 3. For each cluster, scatter symbols
+                  const uses: any[] = [];
+                  clusters.forEach(cluster => {
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    for (const t of cluster) {
+                      const { x, y } = axialToPixel(t.q, t.r);
+                      minX = Math.min(minX, x);
+                      maxX = Math.max(maxX, x);
+                      minY = Math.min(minY, y);
+                      maxY = Math.max(maxY, y);
+                    }
+                    const spacing = hexSize * 0.85;
+                    const gridMinX = minX - spacing * 0.5;
+                    const gridMaxX = maxX + spacing * 0.5;
+                    const gridMinY = minY - spacing * 0.5;
+                    const gridMaxY = maxY + spacing * 0.5;
+                    let rowIdx = 0;
+                    for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
+                      for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) {
+                        const jitterX = (Math.random() - 0.5) * hexSize * 0.35;
+                        const jitterY = (Math.random() - 0.5) * hexSize * 0.35;
+                        const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
+                        const px = gx + jitterX;
+                        const py = gy + jitterY + offsetY;
+                        // Find the nearest terrain tile center
+                        let nearest: HexTile | null = null;
+                        let nearestDist = Infinity;
+                        for (const t of cluster) {
+                          const { x, y } = axialToPixel(t.q, t.r);
+                          const dist = (px - x) ** 2 + (py - y) ** 2;
+                          if (dist < nearestDist) {
+                            nearest = t;
+                            nearestDist = dist;
+                          }
+                        }
+                        if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
+                          const [minS, maxS] = sizeRange;
+                          const size = hexSize * (minS + Math.random() * (maxS - minS));
+                          uses.push(
+                            <use
+                              key={`${symbolId}-${cluster[0].id}-${gx},${gy}`}
+                              href={`#${symbolId}`}
+                              x={px}
+                              y={py}
+                              width={size}
+                              height={size}
+                              transform={`translate(${-size / 2},${-size * 0.8})`}
+                              stroke="black"
+                              fill="none"
+                            />
+                          );
+                        }
+                      }
+                      rowIdx++;
+                    }
+                  });
+                  return uses;
+                }
+                // Add mountain peaks and hill arches
+                const mountainUses = brushTerrainSymbols(TerrainType.MOUNTAIN, 'mountain-peak', [0.8, 1.1]);
+                const hillUses = brushTerrainSymbols(TerrainType.HILLS, 'hill-arch', [0.7, 1.0]);
+                return [
+                  ...treeUses,
+                  ...mountainUses,
+                  ...hillUses,
+                ];
               })()}
             </g>
           </svg>
