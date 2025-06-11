@@ -474,9 +474,21 @@ export default function HexMap() {
                 const clipWidth = bounds.maxX - bounds.minX;
                 const clipHeight = bounds.maxY - bounds.minY;
                 return (
-                  <clipPath id="map-clip">
-                    <rect x={clipX} y={clipY} width={clipWidth} height={clipHeight} />
-                  </clipPath>
+                  <>
+                    <clipPath id="map-clip">
+                      <rect x={clipX} y={clipY} width={clipWidth} height={clipHeight} />
+                    </clipPath>
+                    {/* Simplified evergreen tree symbol */}
+                    <symbol id="forest-evergreen" viewBox="-10 -16 20 32" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="0" y1="12" x2="0" y2="-12" />
+                      <polyline points="0,-12 -4,0 4,0 0,-12" />
+                    </symbol>
+                    {/* Broadleaf tree symbol: circle with trunk */}
+                    <symbol id="forest-broadleaf" viewBox="-10 -14 20 28" stroke="black" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="0" y1="10" x2="0" y2="2" />
+                      <circle cx="0" cy="-2" r="6" />
+                    </symbol>
+                  </>
                 );
               })()}
             </defs>
@@ -512,11 +524,99 @@ export default function HexMap() {
                       fill={fillColor}
                       stroke="none"
                       strokeWidth="0"
-                      className="transition-colors duration-200 hover:opacity-80 cursor-pointer"
+                      className="transition-colors duration-200 cursor-pointer"
                     />
                   </g>
                 );
               })}
+              {/* Forest brushing: detect clusters and scatter tree symbols (now rendered after polygons) */}
+              {(() => {
+                // 1. Find all forest tiles
+                const forestTiles = tiles.filter(t => t.terrain === TerrainType.FOREST);
+                const visited = new Set<string>();
+                const clusters: any[] = [];
+                // 2. BFS to find contiguous clusters
+                for (const tile of forestTiles) {
+                  if (visited.has(tile.id)) continue;
+                  const cluster: any[] = [];
+                  const queue = [tile];
+                  visited.add(tile.id);
+                  while (queue.length) {
+                    const t = queue.shift()!;
+                    cluster.push(t);
+                    for (const n of getNeighbors(t, renderTileMap)) {
+                      if (n.terrain === TerrainType.FOREST && !visited.has(n.id)) {
+                        visited.add(n.id);
+                        queue.push(n);
+                      }
+                    }
+                  }
+                  clusters.push(cluster);
+                }
+                // 3. For each cluster, scatter tree symbols
+                const treeUses: any[] = [];
+                clusters.forEach(cluster => {
+                  // Compute cluster bounds
+                  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                  for (const t of cluster) {
+                    const { x, y } = axialToPixel(t.q, t.r);
+                    minX = Math.min(minX, x);
+                    maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y);
+                    maxY = Math.max(maxY, y);
+                  }
+                  // Expand grid coverage slightly beyond bounds
+                  const spacing = hexSize * 0.85; // slightly less than hex size for overlap
+                  const gridMinX = minX - spacing * 0.5;
+                  const gridMaxX = maxX + spacing * 0.5;
+                  const gridMinY = minY - spacing * 0.5;
+                  const gridMaxY = maxY + spacing * 0.5;
+                  let rowIdx = 0;
+                  for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
+                    for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) { // slightly denser vertically
+                      // Add slight random jitter to position
+                      const jitterX = (Math.random() - 0.5) * hexSize * 0.35;
+                      const jitterY = (Math.random() - 0.5) * hexSize * 0.35;
+                      // Offset every other grid row for better coverage
+                      const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
+                      const px = gx + jitterX;
+                      const py = gy + jitterY + offsetY;
+                      // Find the nearest forest tile center
+                      let nearest: HexTile | null = null;
+                      let nearestDist = Infinity;
+                      for (const t of cluster) {
+                        const { x, y } = axialToPixel(t.q, t.r);
+                        const dist = (px - x) ** 2 + (py - y) ** 2;
+                        if (dist < nearestDist) {
+                          nearest = t;
+                          nearestDist = dist;
+                        }
+                      }
+                      // Increase threshold for edge coverage
+                      if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
+                        const size = hexSize * (0.85 + Math.random() * 0.15);
+                        // Randomly choose tree type: evergreen or broadleaf
+                        const treeType = Math.random() < 0.5 ? 'forest-evergreen' : 'forest-broadleaf';
+                        treeUses.push(
+                          <use
+                            key={`tree-${cluster[0].id}-${gx},${gy}`}
+                            href={`#${treeType}`}
+                            x={px}
+                            y={py}
+                            width={size}
+                            height={size}
+                            transform={`translate(${-size / 2},${-size * 0.8})`}
+                            stroke="black"
+                            fill="none"
+                          />
+                        );
+                      }
+                    }
+                    rowIdx++;
+                  }
+                });
+                return treeUses;
+              })()}
             </g>
           </svg>
         </div>
