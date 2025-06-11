@@ -377,19 +377,19 @@ export default function HexMap() {
       case TerrainType.WATER:
         return '#4A90E2';
       case TerrainType.GRASSLAND:
-        return '#7CB342';
+        return '#9CAF7F'; // desaturated green
       case TerrainType.FOREST:
-        return '#2E7D32';
+        return '#6B8E6B'; // desaturated dark green
       case TerrainType.DESERT:
-        return '#FFB74D';
+        return '#D4B483'; // desaturated sand
       case TerrainType.MOUNTAIN:
-        return '#78909C';
+        return '#8B8B8B'; // desaturated gray
       case TerrainType.HILLS:
-        return '#8D6E63';
+        return '#A69B8F'; // desaturated brown
       case TerrainType.SWAMP:
-        return '#6B8E23'; // olive green
+        return '#8B9E6B'; // desaturated olive
       case TerrainType.BRUSH:
-        return '#B2A76B'; // tan/gray-green
+        return '#B2A76B'; // already desaturated
       default:
         return '#000000';
     }
@@ -723,6 +723,39 @@ export default function HexMap() {
                         if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
                           const [minS, maxS] = sizeRange;
                           const size = hexSize * (minS + Math.random() * (maxS - minS));
+                          // Adjust transform based on symbol type to position from bottom center
+                          let transform = '';
+                          switch (symbolId) {
+                            case 'hill-arch':
+                              transform = `translate(${-size / 2},${-size * 0.3})`; // Hill sits higher
+                              break;
+                            case 'mountain-peak':
+                              transform = `translate(${-size / 2},${-size * 0.6})`; // Mountain sits higher
+                              break;
+                            case 'forest-evergreen':
+                            case 'forest-broadleaf':
+                              transform = `translate(${-size / 2},${-size * 0.7})`; // Trees sit higher
+                              break;
+                            case 'swamp-marsh':
+                              transform = `translate(${-size / 2},${-size * 0.4})`; // Marsh sits higher
+                              break;
+                            case 'brush-bush':
+                              transform = `translate(${-size / 2},${-size * 0.3})`; // Brush sits higher
+                              break;
+                            case 'grass-tuft':
+                              transform = `translate(${-size / 2},${-size * 0.2})`; // Grass sits higher
+                              break;
+                            case 'desert-dot':
+                              transform = `translate(${-size / 2},${-size * 0.1})`; // Dots sit higher
+                              break;
+                            case 'desert-rock1':
+                            case 'desert-rock2':
+                            case 'desert-rock3':
+                              transform = `translate(${-size / 2},${-size * 0.2})`; // Rocks sit higher
+                              break;
+                            default:
+                              transform = `translate(${-size / 2},${-size * 0.5})`;
+                          }
                           uses.push(
                             <use
                               key={`${symbolId}-${cluster[0].id}-${gx},${gy}`}
@@ -731,7 +764,7 @@ export default function HexMap() {
                               y={py}
                               width={size}
                               height={size}
-                              transform={`translate(${-size / 2},${-size * 0.1})`}
+                              transform={transform}
                               stroke="black"
                               fill="none"
                             />
@@ -812,6 +845,37 @@ export default function HexMap() {
                 style={{ backgroundColor: getTerrainColor(terrain) }}
               />
               <span className="capitalize text-gray-800">{terrain}</span>
+              {terrain !== TerrainType.WATER && (
+                <svg className="w-4 h-4" viewBox="-10 -10 20 20">
+                  {terrain === TerrainType.FOREST && (
+                    <>
+                      <use href="#forest-evergreen" width="16" height="16" transform="translate(-8,-8)" />
+                      <use href="#forest-broadleaf" width="16" height="16" transform="translate(0,-8)" />
+                    </>
+                  )}
+                  {terrain === TerrainType.MOUNTAIN && (
+                    <use href="#mountain-peak" width="16" height="16" transform="translate(-8,-8)" />
+                  )}
+                  {terrain === TerrainType.HILLS && (
+                    <use href="#hill-arch" width="16" height="16" transform="translate(-8,-8)" />
+                  )}
+                  {terrain === TerrainType.GRASSLAND && (
+                    <use href="#grass-tuft" width="16" height="16" transform="translate(-8,-8)" />
+                  )}
+                  {terrain === TerrainType.DESERT && (
+                    <>
+                      <use href="#desert-dot" width="4" height="4" transform="translate(-8,-8)" />
+                      <use href="#desert-rock1" width="8" height="8" transform="translate(0,-8)" />
+                    </>
+                  )}
+                  {terrain === TerrainType.SWAMP && (
+                    <use href="#swamp-marsh" width="16" height="16" transform="translate(-8,-8)" />
+                  )}
+                  {terrain === TerrainType.BRUSH && (
+                    <use href="#brush-bush" width="16" height="16" transform="translate(-8,-8)" />
+                  )}
+                </svg>
+              )}
             </div>
           ))}
         </div>
