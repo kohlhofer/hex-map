@@ -588,8 +588,8 @@ export default function HexMap() {
       clusters.push(cluster);
     }
     // 3. For each cluster, scatter symbol positions
-    const positions: { x: number; y: number; size: number }[] = [];
-    clusters.forEach(cluster => {
+    const positions: { x: number; y: number; size: number; clusterIdx: number; gridX: number; gridY: number }[] = [];
+    clusters.forEach((cluster, clusterIdx) => {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const t of cluster) {
         const { x, y } = axialToPixel(t.q, t.r);
@@ -604,17 +604,22 @@ export default function HexMap() {
       const gridMinY = minY - spacing * 0.5;
       const gridMaxY = maxY + spacing * 0.5;
       let rowIdx = 0;
+      let symbolIdx = 0;
       for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
+        const gridX = Math.round((gx - gridMinX) / spacing);
         for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) {
-          // Create seeded random for consistent positioning
-          const gridSeed = `${terrain}-${cluster[0].id}-${gx.toFixed(1)}-${gy.toFixed(1)}`;
-          const gridRand = createSeededRandom(gridSeed);
-          const jitterX = (gridRand() - 0.5) * hexSize * 0.35;
-          const jitterY = (gridRand() - 0.5) * hexSize * 0.35;
+          const gridY = Math.round((gy - gridMinY) / (spacing * 0.9));
+          // Create seeded random for consistent tree positioning
+          const treeSeed = `tree-${clusterIdx}-${gridX}-${gridY}`;
+          const treeRand = createSeededRandom(treeSeed);
+          // Add slight random jitter to position
+          const jitterX = (treeRand() - 0.5) * hexSize * 0.35;
+          const jitterY = (treeRand() - 0.5) * hexSize * 0.35;
+          // Offset every other grid row for better coverage
           const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
           const px = gx + jitterX;
           const py = gy + jitterY + offsetY;
-          // Find the nearest terrain tile center
+          // Find the nearest forest tile center
           let nearest: HexTile | null = null;
           let nearestDist = Infinity;
           for (const t of cluster) {
@@ -625,10 +630,11 @@ export default function HexMap() {
               nearestDist = dist;
             }
           }
+          // Increase threshold for edge coverage
           if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
             const [minS, maxS] = sizeRange;
-            const size = hexSize * (minS + gridRand() * (maxS - minS));
-            positions.push({ x: px, y: py, size });
+            const size = hexSize * (minS + treeRand() * (maxS - minS));
+            positions.push({ x: px, y: py, size, clusterIdx, gridX, gridY });
           }
         }
         rowIdx++;
@@ -636,6 +642,30 @@ export default function HexMap() {
     });
     return positions;
   }
+
+  // --- Map Name Generation ---
+  const nameTemplates = [
+    'The Island of {name}',
+    'The Kingdom of {name}',
+    'The Dark Island of {name}',
+    'The Shores of {name}',
+    'The Realm of {name}',
+    'The Lost Isle of {name}',
+    'The Wilds of {name}',
+    'The Peninsula of {name}',
+    'The Highlands of {name}',
+    'The Domain of {name}',
+  ];
+  const nameParts = [
+    'Aeloria', 'Brightholm', 'Cindervale', 'Duskmoor', 'Eldermist', 'Frostmere', 'Gloamwood', 'Hallowmere',
+    'Ironreach', 'Jadewind', 'Kingsfall', 'Lornspire', 'Mistvale', 'Nightriver', 'Oakenshade', 'Pyrecoast',
+    'Quillhaven', 'Ravenrock', 'Stormhold', 'Thornwild', 'Umberdeep', 'Vastwood', 'Wyrmrest', 'Zephyris',
+  ];
+  // Seeded random for name
+  const nameRand = createSeededRandom(seed + '-name');
+  const template = nameTemplates[Math.floor(nameRand() * nameTemplates.length)];
+  const name = nameParts[Math.floor(nameRand() * nameParts.length)];
+  const mapName = template.replace('{name}', name);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -747,6 +777,41 @@ export default function HexMap() {
                     {/* Desert: sand dot */}
                     <symbol id="desert-dot" viewBox="-2 -2 4 4" stroke="currentColor" strokeWidth="1" fill="none">
                       <circle cx="0" cy="0" r="0.7" />
+                    </symbol>
+                    {/* Classic Windrose SVG symbol */}
+                    <symbol id="windrose" viewBox="-40 -40 80 80">
+                      {/* Outer circle (no fill) */}
+                      <circle cx="0" cy="0" r="30" fill="none" stroke="#222" strokeWidth="1.2" />
+                      {/* Dotted border */}
+                      {Array.from({length: 32}).map((_, i) => {
+                        const angle = (i / 32) * 2 * Math.PI;
+                        const r = 27.5;
+                        return (
+                          <circle key={i} cx={Math.cos(angle)*r} cy={Math.sin(angle)*r} r={0.9} fill="#222" />
+                        );
+                      })}
+                      {/* Secondary points (light) */}
+                      <polygon points="0,-22 2.5,-8 0,-13 -2.5,-8" fill="#bcd" />
+                      <polygon points="0,22 2.5,8 0,13 -2.5,8" fill="#bcd" />
+                      <polygon points="-22,0 -8,2.5 -13,0 -8,-2.5" fill="#bcd" />
+                      <polygon points="22,0 8,2.5 13,0 8,-2.5" fill="#bcd" />
+                      <polygon points="15,-15 8,-8 13,-13 8,-8" fill="#bcd" />
+                      <polygon points="-15,-15 -8,-8 -13,-13 -8,-8" fill="#bcd" />
+                      <polygon points="15,15 8,8 13,13 8,8" fill="#bcd" />
+                      <polygon points="-15,15 -8,8 -13,13 -8,8" fill="#bcd" />
+                      {/* Main points (dark, chunky, inside ring) */}
+                      <polygon points="0,-22 8,-8 0,-15 -8,-8" fill="#223344" />
+                      <polygon points="0,22 8,8 0,15 -8,8" fill="#223344" />
+                      <polygon points="-22,0 -8,8 -15,0 -8,-8" fill="#223344" />
+                      <polygon points="22,0 8,8 15,0 8,-8" fill="#223344" />
+                      {/* Inner circle (no fill) */}
+                      <circle cx="0" cy="0" r="7" fill="none" stroke="#222" strokeWidth="0.8" />
+                      <circle cx="0" cy="0" r="2.5" fill="#223344" />
+                      {/* Cardinal directions (outside ring) */}
+                      <text x="0" y="-36" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">N</text>
+                      <text x="0" y="41" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">S</text>
+                      <text x="-36" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">W</text>
+                      <text x="36" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">E</text>
                     </symbol>
                   </>
                 );
@@ -864,71 +929,28 @@ export default function HexMap() {
                 }
                 // 3. For each cluster, scatter tree symbols
                 const treeUses: any[] = [];
-                clusters.forEach(cluster => {
-                  // Compute cluster bounds
-                  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                  for (const t of cluster) {
-                    const { x, y } = axialToPixel(t.q, t.r);
-                    minX = Math.min(minX, x);
-                    maxX = Math.max(maxX, x);
-                    minY = Math.min(minY, y);
-                    maxY = Math.max(maxY, y);
-                  }
-                  // Expand grid coverage slightly beyond bounds
-                  const spacing = hexSize * 0.85; // slightly less than hex size for overlap
-                  const gridMinX = minX - spacing * 0.5;
-                  const gridMaxX = maxX + spacing * 0.5;
-                  const gridMinY = minY - spacing * 0.5;
-                  const gridMaxY = maxY + spacing * 0.5;
-                  let rowIdx = 0;
-                  for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
-                    for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) { // slightly denser vertically
-                      // Create seeded random for consistent tree positioning
-                      const treeSeed = `tree-${cluster[0].id}-${gx.toFixed(1)}-${gy.toFixed(1)}`;
-                      const treeRand = createSeededRandom(treeSeed);
-                      // Add slight random jitter to position
-                      const jitterX = (treeRand() - 0.5) * hexSize * 0.35;
-                      const jitterY = (treeRand() - 0.5) * hexSize * 0.35;
-                      // Offset every other grid row for better coverage
-                      const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
-                      const px = gx + jitterX;
-                      const py = gy + jitterY + offsetY;
-                      // Find the nearest forest tile center
-                      let nearest: HexTile | null = null;
-                      let nearestDist = Infinity;
-                      for (const t of cluster) {
-                        const { x, y } = axialToPixel(t.q, t.r);
-                        const dist = (px - x) ** 2 + (py - y) ** 2;
-                        if (dist < nearestDist) {
-                          nearest = t;
-                          nearestDist = dist;
-                        }
-                      }
-                      // Increase threshold for edge coverage
-                      if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
-                        const size = hexSize * (0.85 + treeRand() * 0.15);
-                        // Randomly choose tree type: evergreen or broadleaf
-                        const treeType = treeRand() < 0.5 ? 'forest-evergreen' : 'forest-broadleaf';
-                        // Use darkened forest color
-                        const strokeColor = getSymbolColor(TerrainType.FOREST);
-                        treeUses.push(
-                          <g key={`tree-${cluster[0].id}-${gx},${gy}`} style={{ color: strokeColor }}>
-                            <use
-                              href={`#${treeType}`}
-                              x={px}
-                              y={py}
-                              width={size}
-                              height={size}
-                              transform={`translate(${-size / 2},${-size * 0.8})`}
-                              stroke={strokeColor}
-                              fill="none"
-                            />
-                          </g>
-                        );
-                      }
-                    }
-                    rowIdx++;
-                  }
+                const positions = brushTerrainSymbolPositions(TerrainType.FOREST, [0.85, 1.0]);
+                let symbolIdx = 0;
+                positions.forEach((pos: any) => {
+                  // Randomly choose tree type: evergreen or broadleaf
+                  const treeSeed = `tree-${pos.clusterIdx}-${pos.gridX}-${pos.gridY}`;
+                  const treeRand = createSeededRandom(treeSeed);
+                  const treeType = treeRand() < 0.5 ? 'forest-evergreen' : 'forest-broadleaf';
+                  const strokeColor = getSymbolColor(TerrainType.FOREST);
+                  treeUses.push(
+                    <g key={`tree-${pos.clusterIdx}-${pos.gridX}-${pos.gridY}-${symbolIdx++}`} style={{ color: strokeColor }}>
+                      <use
+                        href={`#${treeType}`}
+                        x={pos.x}
+                        y={pos.y}
+                        width={pos.size}
+                        height={pos.size}
+                        transform={`translate(${-pos.size / 2},${-pos.size * 0.8})`}
+                        stroke={strokeColor}
+                        fill="none"
+                      />
+                    </g>
+                  );
                 });
                 // --- Mountain and hill brushing ---
                 // Helper to brush symbols for a given terrain type and symbol, excluding river tiles
@@ -1123,6 +1145,54 @@ export default function HexMap() {
                   ...swampUses,
                   ...brushUses,
                 ];
+              })()}
+
+              {/* Map Name and Windrose overlay (bottom left, compact, classic style) */}
+              {(() => {
+                const padding = 24;
+                // Calculate max size based on SVG bounds
+                const maxWidth = bounds.maxX - bounds.minX - 2 * padding;
+                const maxHeight = bounds.maxY - bounds.minY - 2 * padding;
+                let windroseSize = 110;
+                let titleHeight = 44;
+                // Estimate total height needed (windrose + title + spacing)
+                let totalHeight = windroseSize + titleHeight;
+                if (totalHeight > maxHeight) {
+                  windroseSize = Math.max(60, maxHeight - titleHeight);
+                  totalHeight = windroseSize + titleHeight;
+                }
+                if (windroseSize > maxWidth) {
+                  windroseSize = Math.max(60, maxWidth);
+                }
+                // Place in bottom left, but ensure fits
+                const x = bounds.minX + padding;
+                const y = bounds.maxY - padding - totalHeight;
+                // Add a line break after the first word or after 'of'
+                let nameLines = mapName.split(' ');
+                let breakIdx = nameLines.indexOf('of') !== -1 ? nameLines.indexOf('of') + 1 : 1;
+                const line1 = nameLines.slice(0, breakIdx).join(' ');
+                const line2 = nameLines.slice(breakIdx).join(' ');
+                return (
+                  <g style={{ mixBlendMode: 'multiply' }}>
+                    <g transform={`translate(${x},${y}) scale(1,0.85)`}>
+                      <use href="#windrose" x={0} y={0} width={windroseSize} height={windroseSize} opacity={0.55} />
+                    </g>
+                    <g transform={`translate(${x + windroseSize / 2},${y + windroseSize * 0.85 + 24}) scale(1,0.85)`}>
+                      <text
+                        x={0}
+                        y={0}
+                        fontFamily="Georgia, Times, serif"
+                        fontSize={Math.round(windroseSize * 0.16)}
+                        fill="#4a6fa5"
+                        style={{ fontStyle: 'normal', letterSpacing: '0.5px', mixBlendMode: 'multiply' }}
+                        textAnchor="middle"
+                      >
+                        <tspan x={0} dy="0">{line1}</tspan>
+                        <tspan x={0} dy="1.2em">{line2}</tspan>
+                      </text>
+                    </g>
+                  </g>
+                );
               })()}
             </g>
           </svg>
