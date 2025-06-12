@@ -59,19 +59,20 @@ function randomSeed() {
 
 // Helper: get neighbors for a tile (even-q offset for flat-topped hexes)
 function getNeighbors(tile: HexTile, tileMap: Record<string, HexTile>) {
-  // Even-q offset directions
+  // Even-q offset directions (for flat-topped hexes)
   const evenq_directions = [
-    [+1,  0], [0, -1], [-1, -1],
-    [-1,  0], [-1, +1], [0, +1]
+    [+1,  0], [+1, -1], [0, -1],  // E, NE, NW
+    [-1,  0], [0, +1], [+1, +1]   // W, SW, SE
   ];
   const oddq_directions = [
-    [+1,  0], [+1, -1], [0, -1],
-    [-1,  0], [0, +1], [+1, +1]
+    [+1,  0], [0, -1], [-1, -1],  // E, NE, NW  
+    [-1,  0], [-1, +1], [0, +1]   // W, SW, SE
   ];
   const directions = tile.q % 2 === 0 ? evenq_directions : oddq_directions;
-  return directions
+  const neighbors = directions
     .map(([dq, dr]) => tileMap[`${tile.q + dq},${tile.r + dr}`])
     .filter(n => n);
+  return neighbors;
 }
 
 const createGrid = (size: number): { x: number; y: number }[] => {
@@ -158,6 +159,9 @@ export default function HexMap() {
   const [hexSize, setHexSize] = useState(20); // size of hexagons in pixels (smaller)
   const [seed, setSeed] = useState('12345');
   const [seedInput, setSeedInput] = useState('12345');
+  // Set of road segments where each key is "id1|id2" (ids sorted)
+  const [roadSegments, setRoadSegments] = useState<Set<string>>(new Set());
+  const [roadPaths, setRoadPaths] = useState<Point[][]>([]);
 
   // Convert axial coordinates to pixel coordinates (flat-topped, rectangular grid)
   const axialToPixel = (q: number, r: number): Point => {
@@ -304,7 +308,7 @@ export default function HexMap() {
               n.terrain === TerrainType.FOREST
             ));
             // Make swamp growth more restrictive
-            if (Math.random() < 0.4) {
+            if (rand() < 0.4) {
               frontier = frontier.filter(t => t !== current);
             }
           }
@@ -366,16 +370,13 @@ export default function HexMap() {
 
     // Helper: check if a path would create a river loop or connection that could cut off land
     function wouldCreateRiverLoop(path: HexTile[]): boolean {
-      // Check if any tile in the path is adjacent to an existing river
       for (const tile of path) {
         const neighbors = getNeighbors(tile, tileMap);
         for (const n of neighbors) {
           if (n.river && !path.includes(n)) {
-            // If this neighbor is a river and not part of our path, we might create a loop
-            // Check if this would create a land bridge between rivers
             const landNeighbors = neighbors.filter(n => n.terrain !== TerrainType.WATER && !n.river);
             if (landNeighbors.length <= 1) {
-              return true; // This would create a potential land cutoff
+              return true;
             }
           }
         }
@@ -402,6 +403,45 @@ export default function HexMap() {
       return visited.size === land.length;
     }
 
+    // Hex distance heuristic for A*
+    function hexDistance(a: HexTile, b: HexTile) {
+      return (Math.abs(a.q - b.q) + Math.abs(a.q + a.r - b.q - b.r) + Math.abs(a.r - b.r)) / 2;
+    }
+
+    // Deterministic neighbor sort (by q, then r, then id)
+    function sortedNeighbors(tile: HexTile, tileMap: Record<string, HexTile>, seed: string) {
+      const neighbors = getNeighbors(tile, tileMap);
+      // Deterministically shuffle neighbors based on tile id and global seed
+      const rand = createSeededRandom(seed + '-' + tile.id);
+      return neighbors.slice().sort((a, b) => rand() - 0.5);
+    }
+
+    // A* pathfinding for rivers (prefers lower elevation, shortest path, deterministic)
+    function findRiverPath(start: HexTile, isGoal: (t: HexTile) => boolean): HexTile[] | null {
+      const open: [number, number, HexTile, HexTile[]][] = [[0, 0, start, [start]]]; // [f, g, tile, path]
+      const closed = new Set<string>();
+      let iterations = 0;
+      const MAX_ITER = 2000;
+      while (open.length && iterations++ < MAX_ITER) {
+        open.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const [f, g, tile, path] = open.shift()!;
+        if (isGoal(tile)) return path;
+        closed.add(tile.id);
+        const neighbors = sortedNeighbors(tile, tileMap, seed)
+          .filter(n => n.terrain !== TerrainType.WATER && !n.river && !closed.has(n.id));
+        for (const n of neighbors) {
+          const moveCost = 1 + Math.max(0, terrainElevation(n.terrain) - terrainElevation(tile.terrain));
+          const g2 = g + moveCost;
+          const h = hexDistance(n, start); // heuristic: distance to start (to break ties deterministically)
+          open.push([g2 + h, g2, n, [...path, n]]);
+        }
+      }
+      if (iterations >= MAX_ITER) {
+        console.warn('River pathfinding exceeded max iterations');
+      }
+      return null;
+    }
+
     // Find river sources (mountains not adjacent to sea)
     const riverSources = landTiles.filter(t => 
       t.terrain === TerrainType.MOUNTAIN && 
@@ -417,49 +457,22 @@ export default function HexMap() {
 
     while (riversMade < riverCount && riverAttempts < 30) {
       riverAttempts++;
-      const source = riverSources[Math.floor(rand() * riverSources.length)];
+      // Deterministically pick a source (sort by id, then pick by riversMade)
+      const sortedSources = riverSources.slice().sort((a, b) => a.id.localeCompare(b.id));
+      const source = sortedSources[riversMade % sortedSources.length];
       if (!source) break;
 
-      // BFS to find shortest path to sea, preferring lower elevation
-      const queue: {tile: HexTile, path: HexTile[]}[] = [{tile: source, path: [source]}];
-      const visited = new Set([source.id]);
-      let foundPath: HexTile[] | null = null;
-
-      while (queue.length) {
-        // Sort queue by elevation (lowest first)
-        queue.sort((a, b) => terrainElevation(a.tile.terrain) - terrainElevation(b.tile.terrain));
-        const {tile, path} = queue.shift()!;
-
-        if (isAdjacentToSea(tile)) {
-          foundPath = path;
-          break;
-        }
-
-        // Get neighbors, preferring lower elevation
-        const neighbors = getNeighbors(tile, tileMap)
-          .filter(n => n.terrain !== TerrainType.WATER && !n.river && !visited.has(n.id))
-          .sort((a, b) => terrainElevation(a.terrain) - terrainElevation(b.terrain));
-
-        for (const n of neighbors) {
-          visited.add(n.id);
-          queue.push({tile: n, path: [...path, n]});
-        }
-      }
+      // Use A* to find shortest, most direct path to sea
+      const foundPath = findRiverPath(source, isAdjacentToSea);
 
       if (foundPath && foundPath.length > 3) {
-        // Check if this path would create a problematic river connection
         if (wouldCreateRiverLoop(foundPath)) {
-          continue; // Skip this path and try another
+          continue;
         }
-
-        // Mark river
         for (const t of foundPath) t.river = true;
-
-        // Check connectivity
         if (isIslandConnected()) {
           riversMade++;
         } else {
-          // Undo river if it splits the island
           for (const t of foundPath) t.river = false;
         }
       }
@@ -605,6 +618,183 @@ export default function HexMap() {
     placeSettlements('city', cityCount, 5); // Reduced minimum distance
     placeSettlements('town', townCount, 3); // Reduced minimum distance
     placeSettlements('village', villageCount, 2); // Same for villages
+
+    // --- Road Generation ---
+    // Disallowed terrains for roads
+    const blockedTerrains = new Set<TerrainType>([
+      TerrainType.WATER,
+      TerrainType.MOUNTAIN,
+      TerrainType.SWAMP,
+    ]);
+
+    // Helper: axial distance
+    function axialDistance(a: HexTile, b: HexTile) {
+      const dq = a.q - b.q;
+      const dr = a.r - b.r;
+      return (Math.abs(dq) + Math.abs(dq + dr) + Math.abs(dr)) / 2;
+    }
+
+    // Pathfinding (A* with cost and deterministic neighbor order) for roads
+    function findPath(start: HexTile, goal: HexTile): HexTile[] | null {
+      // Use a Map for O(1) lookups of visited nodes
+      const closed = new Map<string, number>();
+      const open = new Map<string, [number, number, HexTile, HexTile[]]>(); // [f, g, tile, path]
+      open.set(start.id, [0, 0, start, [start]]);
+      
+      let iterations = 0;
+      const MAX_ITER = 2000;
+      
+      while (open.size > 0 && iterations++ < MAX_ITER) {
+        // Find the node with lowest f score
+        let lowestF = Infinity;
+        let currentId = '';
+        for (const [id, [f]] of open) {
+          if (f < lowestF) {
+            lowestF = f;
+            currentId = id;
+          }
+        }
+        
+        const [f, g, tile, path] = open.get(currentId)!;
+        open.delete(currentId);
+        
+        if (tile.id === goal.id) {
+          return path;
+        }
+        
+        closed.set(tile.id, g);
+        
+        // Get neighbors and sort them by distance to goal for better path quality
+        const neighbors = sortedNeighbors(tile, tileMap, seed)
+          .filter(n => {
+            // Skip if already visited with a better path
+            const existingG = closed.get(n.id);
+            if (existingG !== undefined && existingG <= g) return false;
+            
+            // Skip if in open set with better path
+            const openNode = open.get(n.id);
+            if (openNode && openNode[1] <= g) return false;
+            
+            return true;
+          });
+        
+        for (const n of neighbors) {
+          const terrain = n.terrain;
+          const moveCost = roadCost[terrain] ?? 1000;
+          const g2 = g + moveCost;
+          const h = hexDistance(n, goal);
+          const f2 = g2 + h;
+          
+          // Only add if not in open set or has better path
+          const openNode = open.get(n.id);
+          if (!openNode || g2 < openNode[1]) {
+            open.set(n.id, [f2, g2, n, [...path, n]]);
+          }
+        }
+      }
+      
+      if (iterations >= MAX_ITER) {
+        console.warn('Road pathfinding exceeded max iterations');
+      }
+      return null;
+    }
+
+    const roadSet: Set<string> = new Set();
+    const paths: Point[][] = [];
+
+    // Helper to record road segments from a tile path
+    function addPathToRoads(path: HexTile[]) {
+      for (let i = 0; i < path.length - 1; i++) {
+        const a = path[i].id;
+        const b = path[i + 1].id;
+        const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+        roadSet.add(key);
+      }
+
+      // Build a more organic, winding path
+      const pixelPath: Point[] = [];
+      for (let i = 0; i < path.length - 1; i++) {
+        const a = path[i];
+        const b = path[i + 1];
+        const pA = axialToPixel(a.q, a.r);
+        const pB = axialToPixel(b.q, b.r);
+        // Always add the start point
+        if (i === 0) pixelPath.push(pA);
+        // Add several intermediate points with smooth, seeded random offsets
+        const segSeed = seed + '-' + a.id + '-' + b.id;
+        const segRand = createSeededRandom(segSeed);
+        const numMid = 5 + Math.floor(segRand() * 2); // 5-6 midpoints for more smoothing
+        for (let j = 1; j <= numMid; j++) {
+          const t = j / (numMid + 1);
+          // Linear interpolation
+          let x = pA.x * (1 - t) + pB.x * t;
+          let y = pA.y * (1 - t) + pB.y * t;
+          // Offset perpendicular to the segment
+          const dx = pB.x - pA.x;
+          const dy = pB.y - pA.y;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
+          const nx = -dy / len;
+          const ny = dx / len;
+          // Sine-based smoothness and reduced random amplitude
+          const sine = Math.sin(Math.PI * t);
+          const amp = (0.12 + segRand() * 0.22) * hexSize * sine; // up to ~0.34 hexSize (was ~0.7)
+          x += nx * amp * (segRand() - 0.5) * 2;
+          y += ny * amp * (segRand() - 0.5) * 2;
+          pixelPath.push({ x, y });
+        }
+        // Always add the end point of the segment (except for the very last, which will be added by the next segment or after loop)
+        pixelPath.push(pB);
+      }
+      paths.push(pixelPath);
+    }
+
+    const settlementsWithType = newTiles.filter(t => t.settlement);
+    const cities = settlementsWithType.filter(t => t.settlement === 'city');
+    const towns = settlementsWithType.filter(t => t.settlement === 'town');
+
+    // --- Minimum Spanning Tree (MST) for roads among cities and towns ---
+    const roadNodes = [...cities, ...towns];
+    if (roadNodes.length > 1) {
+      // Prim's algorithm for MST
+      const connected: HexTile[] = [roadNodes[0]];
+      const unconnected: HexTile[] = roadNodes.slice(1);
+      while (unconnected.length > 0) {
+        let bestFrom: HexTile | null = null;
+        let bestTo: HexTile | null = null;
+        let bestCost = Infinity;
+        let bestPath: HexTile[] | null = null;
+        for (const from of connected) {
+          for (const to of unconnected) {
+            const path = findPath(from, to);
+            if (!path) continue;
+            // Calculate total cost
+            let cost = 0;
+            for (let i = 0; i < path.length - 1; i++) {
+              const t = path[i + 1];
+              cost += roadCost[t.terrain] ?? 1000;
+            }
+            if (cost < bestCost) {
+              bestCost = cost;
+              bestFrom = from;
+              bestTo = to;
+              bestPath = path;
+            }
+          }
+        }
+        if (bestPath && bestTo) {
+          addPathToRoads(bestPath);
+          connected.push(bestTo);
+          const idx = unconnected.findIndex(t => t.id === bestTo!.id);
+          if (idx !== -1) unconnected.splice(idx, 1);
+        } else {
+          // No path found, break to avoid infinite loop
+          break;
+        }
+      }
+    }
+
+    setRoadSegments(roadSet);
+    setRoadPaths(paths);
 
     setTiles(newTiles);
     setTileMap(tileMap);
@@ -801,6 +991,37 @@ export default function HexMap() {
   const name = nameParts[Math.floor(nameRand() * nameParts.length)];
   const mapName = template.replace('{name}', name);
 
+  // Road cost by terrain
+  const roadCost: Record<TerrainType, number> = {
+    [TerrainType.WATER]: 1000,      // Extremely high, but not infinite
+    [TerrainType.MOUNTAIN]: 200,    // Very high
+    [TerrainType.SWAMP]: 120,       // Very high
+    [TerrainType.FOREST]: 6,
+    [TerrainType.HILLS]: 5,
+    [TerrainType.GRASSLAND]: 3,
+    [TerrainType.DESERT]: 7,
+    [TerrainType.BRUSH]: 8,
+  };
+
+  // Helper: Catmull-Rom to Bezier spline for smooth SVG path
+  function pointsToSmoothPath(points: Point[]): string {
+    if (points.length < 2) return '';
+    let d = `M${points[0].x},${points[0].y}`;
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i - 1] || points[i];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[i + 2] || p2;
+      // Catmull-Rom to Bezier
+      const c1x = p1.x + (p2.x - p0.x) / 6;
+      const c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6;
+      const c2y = p2.y - (p3.y - p1.y) / 6;
+      d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+    }
+    return d;
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Floating Generate Button (restored, fixed top-left) */}
@@ -913,7 +1134,7 @@ export default function HexMap() {
                       <circle cx="0" cy="0" r="0.7" />
                     </symbol>
                     {/* Classic Windrose SVG symbol */}
-                    <symbol id="windrose" viewBox="-40 -40 80 80">
+                    <symbol id="windrose" viewBox="-45 -50 90 100">
                       {/* Outer circle (no fill) */}
                       <circle cx="0" cy="0" r="30" fill="none" stroke="#222" strokeWidth="1.2" />
                       {/* Dotted border */}
@@ -941,11 +1162,11 @@ export default function HexMap() {
                       {/* Inner circle (no fill) */}
                       <circle cx="0" cy="0" r="7" fill="none" stroke="#222" strokeWidth="0.8" />
                       <circle cx="0" cy="0" r="2.5" fill="#223344" />
-                      {/* Cardinal directions (outside ring) */}
-                      <text x="0" y="-36" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">N</text>
-                      <text x="0" y="41" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">S</text>
-                      <text x="-36" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">W</text>
-                      <text x="36" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">E</text>
+                      {/* Cardinal directions (outside ring, more margin) */}
+                      <text x="0" y="-43" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">N</text>
+                      <text x="0" y="48" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">S</text>
+                      <text x="-41" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">W</text>
+                      <text x="41" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">E</text>
                     </symbol>
                     {/* Settlement symbols */}
                     <symbol id="settlement-city" viewBox="-10 -10 20 20">
@@ -1379,26 +1600,61 @@ export default function HexMap() {
                 );
               })}
 
-              {/* Map Name and Windrose overlay (bottom left, compact, classic style) */}
+              {/* Map Name and Windrose overlay (dynamically positioned/scaled over water) */}
               {(() => {
-                const padding = 24;
-                // Calculate max size based on SVG bounds
-                const maxWidth = bounds.maxX - bounds.minX - 2 * padding;
-                const maxHeight = bounds.maxY - bounds.minY - 2 * padding;
-                let windroseSize = 110;
-                let titleHeight = 44;
-                // Estimate total height needed (windrose + title + spacing)
+                // Find a large enough water region on the left or right edge
+                const padding = 16;
+                const minSize = 80; // minimum windrose+name size
+                const maxSize = 120; // max windrose+name size
+                const scanWidth = Math.ceil(mapWidth * 0.18); // scan 18% of map width from left/right
+                const scanHeight = Math.ceil(mapHeight * 0.45); // scan 45% of map height from top
+                // Helper to check if a region is all water
+                function isWaterRegion(q0: number, r0: number, w: number, h: number) {
+                  for (let q = q0; q < q0 + w; q++) {
+                    for (let r = r0; r < r0 + h; r++) {
+                      const t = renderTileMap[`${q},${r}`];
+                      if (!t || t.terrain !== TerrainType.WATER) return false;
+                    }
+                  }
+                  return true;
+                }
+                // Try left edge first, then right edge
+                let found = false;
+                let region = null;
+                for (let side of ['left', 'right']) {
+                  for (let h = scanHeight; h >= 2; h--) {
+                    for (let w = scanWidth; w >= 2; w--) {
+                      for (let r0 = 0; r0 <= mapHeight - h; r0++) {
+                        let q0 = side === 'left' ? 0 : mapWidth - w;
+                        if (isWaterRegion(q0, r0, w, h)) {
+                          region = { q0, r0, w, h, side };
+                          found = true;
+                          break;
+                        }
+                      }
+                      if (found) break;
+                    }
+                    if (found) break;
+                  }
+                  if (found) break;
+                }
+                // Fallback: bottom left corner
+                if (!region) {
+                  region = { q0: 0, r0: mapHeight - scanHeight, w: scanWidth, h: scanHeight, side: 'left' };
+                }
+                // Calculate pixel position and scale
+                const { q0, r0, w, h, side } = region;
+                // Center of region in pixel coords
+                const centerQ = q0 + w / 2;
+                const centerR = r0 + h / 2;
+                const center = axialToPixel(centerQ, centerR);
+                // Scale windrose+name to fit region
+                const regionPxW = hexSize * 1.5 * w;
+                const regionPxH = hexSize * Math.sqrt(3) * 0.7 * h;
+                let windroseSize = Math.max(minSize, Math.min(maxSize, Math.min(regionPxW, regionPxH) - padding));
+                let titleHeight = windroseSize * 0.38;
                 let totalHeight = windroseSize + titleHeight;
-                if (totalHeight > maxHeight) {
-                  windroseSize = Math.max(60, maxHeight - titleHeight);
-                  totalHeight = windroseSize + titleHeight;
-                }
-                if (windroseSize > maxWidth) {
-                  windroseSize = Math.max(60, maxWidth);
-                }
-                // Place in bottom left, but ensure fits
-                const x = bounds.minX + padding;
-                const y = bounds.maxY - padding - totalHeight;
+                let scale = Math.min(1, (regionPxH - padding) / totalHeight, (regionPxW - padding) / windroseSize);
                 // Add a line break after the first word or after 'of'
                 let nameLines = mapName.split(' ');
                 let breakIdx = nameLines.indexOf('of') !== -1 ? nameLines.indexOf('of') + 1 : 1;
@@ -1406,10 +1662,10 @@ export default function HexMap() {
                 const line2 = nameLines.slice(breakIdx).join(' ');
                 return (
                   <g style={{ mixBlendMode: 'multiply' }}>
-                    <g transform={`translate(${x},${y}) scale(1,0.85)`}>
+                    <g transform={`translate(${center.x - windroseSize / 2},${center.y - totalHeight / 2}) scale(${scale},${scale * 0.85})`}>
                       <use href="#windrose" x={0} y={0} width={windroseSize} height={windroseSize} opacity={0.55} />
                     </g>
-                    <g transform={`translate(${x + windroseSize / 2},${y + windroseSize * 0.85 + 24}) scale(1,0.85)`}>
+                    <g transform={`translate(${center.x},${center.y + windroseSize * 0.45}) scale(${scale},${scale * 0.85})`}>
                       <text
                         x={0}
                         y={0}
@@ -1426,6 +1682,21 @@ export default function HexMap() {
                   </g>
                 );
               })()}
+
+              {/* Layer 2.5: Roads (smoothed paths) */}
+              {roadPaths.map((points, idx) => (
+                <path
+                  key={`road-path-${idx}`}
+                  d={pointsToSmoothPath(points)}
+                  fill="none"
+                  stroke="#333"
+                  strokeWidth={hexSize * 0.13}
+                  strokeDasharray={`${hexSize * 0.28},${hexSize * 0.18}`}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={0.65}
+                />
+              ))}
             </g>
           </svg>
         </div>
