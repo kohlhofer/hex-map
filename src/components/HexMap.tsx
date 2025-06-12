@@ -996,7 +996,7 @@ export default function HexMap() {
     [TerrainType.WATER]: 1000,      // Extremely high, but not infinite
     [TerrainType.MOUNTAIN]: 200,    // Very high
     [TerrainType.SWAMP]: 120,       // Very high
-    [TerrainType.FOREST]: 6,
+    [TerrainType.FOREST]: 12,      // Increased to make forest less likely
     [TerrainType.HILLS]: 5,
     [TerrainType.GRASSLAND]: 3,
     [TerrainType.DESERT]: 7,
