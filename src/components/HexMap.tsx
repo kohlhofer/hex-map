@@ -151,6 +151,7 @@ function getSymbolColor(terrain: TerrainType): string {
 export default function HexMap() {
   const [tiles, setTiles] = useState<HexTile[]>([]);
   const [tileMap, setTileMap] = useState<Record<string, HexTile>>({});
+  const [hoveredTile, setHoveredTile] = useState<string | null>(null);
   const [mapWidth, setMapWidth] = useState(35); // width of the map (in hexes)
   const [mapHeight, setMapHeight] = useState(20); // height of the map (in hexes)
   const [hexSize, setHexSize] = useState(20); // size of hexagons in pixels (smaller)
@@ -467,6 +468,7 @@ export default function HexMap() {
     for (const tile of newTiles) {
       if (tile.river) {
         tile.terrain = TerrainType.WATER;
+        tile.river = true; // explicitly preserve river flag for rendering
       }
     }
 
@@ -521,6 +523,15 @@ export default function HexMap() {
   useEffect(() => {
     generateMap();
   }, [mapWidth, mapHeight, seed]);
+
+  // Helper function to create a seeded random generator for consistent symbol placement
+  const createSeededRandom = (seed: string) => {
+    let seedNum = 0;
+    for (let i = 0; i < seed.length; i++) {
+      seedNum = (seedNum * 31 + seed.charCodeAt(i)) & 0xffffffff;
+    }
+    return mulberry32(seedNum);
+  };
 
   // Build a local map from tiles for rendering
   const renderTileMap: Record<string, HexTile> = {};
@@ -595,8 +606,11 @@ export default function HexMap() {
       let rowIdx = 0;
       for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
         for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) {
-          const jitterX = (Math.random() - 0.5) * hexSize * 0.35;
-          const jitterY = (Math.random() - 0.5) * hexSize * 0.35;
+          // Create seeded random for consistent positioning
+          const gridSeed = `${terrain}-${cluster[0].id}-${gx.toFixed(1)}-${gy.toFixed(1)}`;
+          const gridRand = createSeededRandom(gridSeed);
+          const jitterX = (gridRand() - 0.5) * hexSize * 0.35;
+          const jitterY = (gridRand() - 0.5) * hexSize * 0.35;
           const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
           const px = gx + jitterX;
           const py = gy + jitterY + offsetY;
@@ -613,7 +627,7 @@ export default function HexMap() {
           }
           if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
             const [minS, maxS] = sizeRange;
-            const size = hexSize * (minS + Math.random() * (maxS - minS));
+            const size = hexSize * (minS + gridRand() * (maxS - minS));
             positions.push({ x: px, y: py, size });
           }
         }
@@ -624,64 +638,26 @@ export default function HexMap() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <div className="max-w-6xl mx-auto px-4">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-4">Hexagonal Map Generator</h1>
-          <div className="flex justify-center gap-4 mb-4 flex-wrap">
-            <button
-              onClick={() => setMapWidth(prev => Math.max(6, prev - 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Decrease Width
-            </button>
-            <button
-              onClick={() => setMapWidth(prev => Math.min(40, prev + 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Increase Width
-            </button>
-            <button
-              onClick={() => setMapHeight(prev => Math.max(6, prev - 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Decrease Height
-            </button>
-            <button
-              onClick={() => setMapHeight(prev => Math.min(30, prev + 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Increase Height
-            </button>
-            <button
-              onClick={() => { const s = randomSeed(); setSeed(s); setSeedInput(s); }}
-              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-            >
-              Random Seed
-            </button>
-            <form onSubmit={e => { e.preventDefault(); setSeed(seedInput); }}>
-              <input
-                type="text"
-                value={seedInput}
-                onChange={e => setSeedInput(e.target.value)}
-                className="px-2 py-1 border rounded ml-2"
-                placeholder="Seed"
-                style={{ width: 100 }}
-              />
-              <button
-                type="submit"
-                className="ml-1 px-2 py-1 bg-gray-300 rounded hover:bg-gray-400"
-              >
-                Set Seed
-              </button>
-            </form>
-          </div>
-          <p className="text-lg text-gray-600">Map Width: {mapWidth}, Map Height: {mapHeight}</p>
-        </div>
-
-        <div className="relative" style={{ height: `${bounds.maxY - bounds.minY}px` }}>
+    <div className="min-h-screen bg-gray-100">
+      {/* Floating Generate Button (restored, fixed top-left) */}
+      <div className="fixed top-4 left-4 z-20">
+        <button
+          onClick={() => { const s = randomSeed(); setSeed(s); setSeedInput(s); }}
+          className="w-10 h-10 flex items-center justify-center bg-white bg-opacity-80 rounded-full shadow hover:bg-green-100 transition-colors border border-gray-300"
+          title="Generate New Map"
+          aria-label="Generate New Map"
+        >
+          <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582M20 20v-5h-.581M19.418 9A7.978 7.978 0 0012 4a8 8 0 00-7.418 5M4.582 15A7.978 7.978 0 0012 20a8 8 0 007.418-5" />
+          </svg>
+        </button>
+      </div>
+      {/* Map SVG edge-to-edge, top of page */}
+      <div className="w-full" style={{ margin: 0, padding: 0 }}>
+        <div className="relative w-full" style={{ height: `${bounds.maxY - bounds.minY}px`, margin: 0, padding: 0 }}>
           <svg
-            className="w-full h-full"
+            className="w-full h-full block"
+            style={{ display: 'block', margin: 0, padding: 0 }}
             viewBox={`${bounds.minX} ${bounds.minY} ${bounds.maxX - bounds.minX} ${bounds.maxY - bounds.minY}`}
           >
             <defs>
@@ -698,6 +674,25 @@ export default function HexMap() {
                     <clipPath id="map-clip">
                       <rect x={clipX} y={clipY} width={clipWidth} height={clipHeight} />
                     </clipPath>
+                    {/* Shoreline wave symbol variations */}
+                    <symbol id="shore-wave-1" viewBox="-8 -4 16 8" stroke="#dbeafe" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M-6,-1 Q-5,0 -4,-1" />
+                      <path d="M-2,1 Q-1,2 0,1" />
+                      <path d="M3,0 Q4,1 5,0" />
+                    </symbol>
+                    <symbol id="shore-wave-2" viewBox="-8 -4 16 8" stroke="#dbeafe" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M-5,0 Q-4,1 -3,0" />
+                      <path d="M0,-1 Q1,0 2,-1" />
+                    </symbol>
+                    <symbol id="shore-wave-3" viewBox="-8 -4 16 8" stroke="#dbeafe" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M-6,0 Q-5,1 -4,0" />
+                      <path d="M-1,1 Q0,2 1,1" />
+                      <path d="M4,-1 Q5,0 6,-1" />
+                    </symbol>
+                    <symbol id="shore-wave-4" viewBox="-8 -4 16 8" stroke="#dbeafe" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M-7,-1 Q-6,0 -5,-1" />
+                      <path d="M-2,0 Q-1,1 0,0" />
+                    </symbol>
                     {/* Simplified evergreen tree symbol */}
                     <symbol id="forest-evergreen" viewBox="-10 -16 20 32" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="0" y1="12" x2="0" y2="-12" />
@@ -758,22 +753,91 @@ export default function HexMap() {
               })()}
             </defs>
             <g clipPath="url(#map-clip)">
+              {/* Layer 1: Base terrain hexes */}
               {tiles.map((tile) => {
                 const center = axialToPixel(tile.q, tile.r);
                 const isWater = tile.terrain === TerrainType.WATER;
                 const fillColor = isWater ? '#4A90E2' : getTerrainColor(tile.terrain);
                 return (
-                  <g key={tile.id}>
-                    <polygon
-                      points={getHexPoints(center)}
-                      fill={fillColor}
-                      stroke="none"
-                      strokeWidth="0"
-                      className="transition-colors duration-200 cursor-pointer"
-                    />
+                  <polygon
+                    key={`terrain-${tile.id}`}
+                    points={getHexPoints(center)}
+                    fill={fillColor}
+                    stroke="none"
+                    strokeWidth="0"
+                    className="cursor-pointer"
+                    onMouseEnter={() => setHoveredTile(tile.id)}
+                    onMouseLeave={() => setHoveredTile(null)}
+                  />
+                );
+              })}
+
+              {/* Layer 2: Hover overlay */}
+              {hoveredTile && (() => {
+                const tile = tiles.find(t => t.id === hoveredTile);
+                if (!tile) return null;
+                const center = axialToPixel(tile.q, tile.r);
+                return (
+                  <polygon
+                    key={`hover-${tile.id}`}
+                    points={getHexPoints(center)}
+                    fill="white"
+                    stroke="none"
+                    strokeWidth="0"
+                    opacity="0.15"
+                    pointerEvents="none"
+                  />
+                );
+              })()}
+
+              {/* Layer 3: Shoreline waves */}
+              {tiles.map((tile) => {
+                const center = axialToPixel(tile.q, tile.r);
+                const isWater = tile.terrain === TerrainType.WATER;
+                return (
+                  <g key={`waves-${tile.id}`}>
+                    {/* Draw shoreline waves on water tiles adjacent to land */}
+                    {isWater && !tile.river && (() => {
+                      const landNeighbors = getNeighbors(tile, renderTileMap).filter(n => n.terrain !== TerrainType.WATER);
+                      if (landNeighbors.length === 0) return null;
+                      // Compute average direction to all adjacent land tiles
+                      let avgX = 0, avgY = 0;
+                      landNeighbors.forEach(landNeighbor => {
+                        const landCenter = axialToPixel(landNeighbor.q, landNeighbor.r);
+                        avgX += landCenter.x - center.x;
+                        avgY += landCenter.y - center.y;
+                      });
+                      avgX /= landNeighbors.length;
+                      avgY /= landNeighbors.length;
+                      // Angle for wave orientation
+                      const angle = Math.atan2(avgY, avgX) * 180 / Math.PI + 90;
+                      // Move the wave even closer to the center of the water tile
+                      const px = center.x + avgX * 0.2;
+                      const py = center.y + avgY * 0.2;
+                      // Pick a random wave symbol variation for each shoreline wave
+                      const waveVariants = ["shore-wave-1", "shore-wave-2", "shore-wave-3", "shore-wave-4"];
+                      // Use a seeded random for consistency per tile
+                      let hash = 0;
+                      for (let i = 0; i < tile.id.length; i++) hash = ((hash << 5) - hash) + tile.id.charCodeAt(i);
+                      const variant = waveVariants[Math.abs(hash) % waveVariants.length];
+                      return (
+                        <use
+                          key={`wave-${tile.id}`}
+                          href={`#${variant}`}
+                          x={px}
+                          y={py}
+                          width={hexSize * 0.7}
+                          height={hexSize * 0.35}
+                          transform={`rotate(${angle},${px},${py})`}
+                          opacity={0.4}
+                        />
+                      );
+                    })()}
                   </g>
                 );
               })}
+
+              {/* Layer 4: Terrain symbols */}
               {/* Forest brushing: detect clusters and scatter tree symbols (now rendered after polygons) */}
               {(() => {
                 // 1. Find all forest tiles
@@ -819,9 +883,12 @@ export default function HexMap() {
                   let rowIdx = 0;
                   for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
                     for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) { // slightly denser vertically
+                      // Create seeded random for consistent tree positioning
+                      const treeSeed = `tree-${cluster[0].id}-${gx.toFixed(1)}-${gy.toFixed(1)}`;
+                      const treeRand = createSeededRandom(treeSeed);
                       // Add slight random jitter to position
-                      const jitterX = (Math.random() - 0.5) * hexSize * 0.35;
-                      const jitterY = (Math.random() - 0.5) * hexSize * 0.35;
+                      const jitterX = (treeRand() - 0.5) * hexSize * 0.35;
+                      const jitterY = (treeRand() - 0.5) * hexSize * 0.35;
                       // Offset every other grid row for better coverage
                       const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
                       const px = gx + jitterX;
@@ -839,9 +906,9 @@ export default function HexMap() {
                       }
                       // Increase threshold for edge coverage
                       if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
-                        const size = hexSize * (0.85 + Math.random() * 0.15);
+                        const size = hexSize * (0.85 + treeRand() * 0.15);
                         // Randomly choose tree type: evergreen or broadleaf
-                        const treeType = Math.random() < 0.5 ? 'forest-evergreen' : 'forest-broadleaf';
+                        const treeType = treeRand() < 0.5 ? 'forest-evergreen' : 'forest-broadleaf';
                         // Use darkened forest color
                         const strokeColor = getSymbolColor(TerrainType.FOREST);
                         treeUses.push(
@@ -906,8 +973,11 @@ export default function HexMap() {
                     let rowIdx = 0;
                     for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
                       for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) {
-                        const jitterX = (Math.random() - 0.5) * hexSize * 0.35;
-                        const jitterY = (Math.random() - 0.5) * hexSize * 0.35;
+                        // Create seeded random for consistent symbol positioning
+                        const symbolSeed = `${symbolId}-${cluster[0].id}-${gx.toFixed(1)}-${gy.toFixed(1)}`;
+                        const symbolRand = createSeededRandom(symbolSeed);
+                        const jitterX = (symbolRand() - 0.5) * hexSize * 0.35;
+                        const jitterY = (symbolRand() - 0.5) * hexSize * 0.35;
                         const offsetY = (rowIdx % 2 === 0) ? 0 : spacing * 0.45;
                         const px = gx + jitterX;
                         const py = gy + jitterY + offsetY;
@@ -924,7 +994,7 @@ export default function HexMap() {
                         }
                         if (nearest && nearestDist < (hexSize * 0.95) ** 2) {
                           const [minS, maxS] = sizeRange;
-                          const size = hexSize * (minS + Math.random() * (maxS - minS));
+                          const size = hexSize * (minS + symbolRand() * (maxS - minS));
                           // Adjust transform based on symbol type to position from bottom center
                           let transform = '';
                           switch (symbolId) {
@@ -985,7 +1055,11 @@ export default function HexMap() {
                 function sparseBrushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number], skipProb: number) {
                   const uses = brushTerrainSymbols(terrain, symbolId, sizeRange);
                   // Filter out a random portion of the uses
-                  return uses.filter(() => Math.random() > skipProb);
+                  return uses.filter((_, index) => {
+                    const filterSeed = `filter-${terrain}-${symbolId}-${index}`;
+                    const filterRand = createSeededRandom(filterSeed);
+                    return filterRand() > skipProb;
+                  });
                 }
                 // Add mountain peaks and hill arches (no rivers)
                 const mountainUses = brushTerrainSymbols(TerrainType.MOUNTAIN, 'mountain-peak', [0.8, 1.1]);
@@ -1001,7 +1075,9 @@ export default function HexMap() {
                   const desertTiles = tiles.filter(t => t.terrain === TerrainType.DESERT);
                   console.log('Desert tiles (no river):', desertTiles.length, 'Desert symbols:', positions.length);
                   return positions.map((pos, i) => {
-                    if (Math.random() < 0.8) {
+                    const dotSeed = `desert-dot-${i}-${pos.x.toFixed(1)}-${pos.y.toFixed(1)}`;
+                    const dotRand = createSeededRandom(dotSeed);
+                    if (dotRand() < 0.8) {
                       return (
                         <g key={i} style={{ color: strokeColor }}>
                           <use
@@ -1017,7 +1093,7 @@ export default function HexMap() {
                         </g>
                       );
                     } else {
-                      const type = rockTypes[Math.floor(Math.random() * rockTypes.length)];
+                      const type = rockTypes[Math.floor(dotRand() * rockTypes.length)];
                       return (
                         <g key={i} style={{ color: strokeColor }}>
                           <use
@@ -1050,6 +1126,57 @@ export default function HexMap() {
               })()}
             </g>
           </svg>
+        </div>
+
+        {/* Controls below map */}
+        <div className="mt-8 space-y-4 max-w-6xl mx-auto px-4">
+          <div className="flex justify-center gap-4 flex-wrap">
+            <button
+              onClick={() => setMapWidth(prev => Math.max(6, prev - 1))}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Decrease Width
+            </button>
+            <button
+              onClick={() => setMapWidth(prev => Math.min(40, prev + 1))}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Increase Width
+            </button>
+            <button
+              onClick={() => setMapHeight(prev => Math.max(6, prev - 1))}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Decrease Height
+            </button>
+            <button
+              onClick={() => setMapHeight(prev => Math.min(30, prev + 1))}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Increase Height
+            </button>
+          </div>
+          
+          <div className="flex justify-center items-center gap-4">
+            <form onSubmit={e => { e.preventDefault(); setSeed(seedInput); }} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={seedInput}
+                onChange={e => setSeedInput(e.target.value)}
+                className="px-2 py-1 border rounded"
+                placeholder="Seed"
+                style={{ width: 100 }}
+              />
+              <button
+                type="submit"
+                className="px-2 py-1 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Set Seed
+              </button>
+            </form>
+          </div>
+          
+          <p className="text-center text-gray-600">Map Width: {mapWidth}, Map Height: {mapHeight}</p>
         </div>
 
         <div className="mt-8 grid grid-cols-3 gap-4 max-w-2xl mx-auto">
