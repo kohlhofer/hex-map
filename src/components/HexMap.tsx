@@ -20,6 +20,7 @@ interface HexTile {
   r: number;
   terrain: TerrainType;
   river?: boolean;
+  settlement?: null | 'city' | 'town' | 'village';
 }
 
 interface Point {
@@ -472,6 +473,139 @@ export default function HexMap() {
       }
     }
 
+    // --- Settlement Placement ---
+    // Helper: score tile for settlement suitability
+    function settlementScore(tile: HexTile) {
+      if (tile.terrain === TerrainType.WATER || tile.terrain === TerrainType.MOUNTAIN || tile.terrain === TerrainType.SWAMP) return -1000;
+      let score = 0;
+      // Prefer grassland, hills, forest edge
+      if (tile.terrain === TerrainType.GRASSLAND) score += 5;
+      if (tile.terrain === TerrainType.HILLS) score += 3;
+      if (tile.terrain === TerrainType.FOREST) score += 1;
+      if (tile.terrain === TerrainType.DESERT) score -= 2;
+      // Prefer near river or coast
+      const neighbors = getNeighbors(tile, tileMap);
+      if (neighbors.some(n => n.river)) score += 4; // Reduced bonus for river
+      if (neighbors.some(n => n.terrain === TerrainType.WATER)) score += 3; // Reduced bonus for coast
+      
+      // Add some randomness to encourage spread
+      score += (mulberry32(seedNum + tile.q * 1000 + tile.r * 17)() * 4); // More random influence
+      
+      // Add distance from center bonus to encourage using the whole island
+      const centerQ = Math.floor(mapWidth / 2);
+      const centerR = Math.floor(mapHeight / 2);
+      const distFromCenter = Math.sqrt((tile.q - centerQ) ** 2 + (tile.r - centerR) ** 2);
+      const normalizedDist = distFromCenter / (Math.sqrt(mapWidth * mapWidth + mapHeight * mapHeight) / 2);
+      score += normalizedDist * 3; // Bonus for being away from center
+      
+      return score;
+    }
+
+    // Determine counts
+    const landCount = newTiles.filter(t => t.terrain !== TerrainType.WATER).length;
+    // Calculate a map size factor (smaller maps should have fewer settlements)
+    const mapSizeFactor = Math.min(1, Math.sqrt(mapWidth * mapHeight) / 25);
+    
+    // Adjust counts based on map size
+    const cityCount = Math.min(2, Math.max(1, Math.floor(landCount / 2000 * mapSizeFactor))); // Maximum 2 cities per map
+    const townCount = Math.min(3, Math.max(1, Math.floor(landCount / 300 * mapSizeFactor))); // Cut towns in half
+    const villageCount = Math.min(4, Math.max(2, Math.floor(landCount / 120 * mapSizeFactor))); // Cut villages in half
+    
+    console.log(`Map size: ${mapWidth}x${mapHeight}, Land tiles: ${landCount}, Size factor: ${mapSizeFactor.toFixed(2)}`);
+    console.log(`Settlements: ${cityCount} cities, ${townCount} towns, ${villageCount} villages`);
+
+    // Place settlements largest to smallest
+    const taken = new Set<string>();
+    function placeSettlements(type: 'city' | 'town' | 'village', count: number, minDist: number) {
+      let candidates = newTiles.filter(t => t.terrain !== TerrainType.WATER && !taken.has(t.id));
+      // Score and sort
+      candidates = candidates
+        .map(t => ({ t, score: settlementScore(t) }))
+        .sort((a, b) => b.score - a.score)
+        .map(x => x.t);
+      
+      // For better distribution, divide the map into regions and try to place at least one settlement in each region
+      const regionsX = 3; // 3x3 grid of regions
+      const regionsY = 3;
+      const regionWidth = mapWidth / regionsX;
+      const regionHeight = mapHeight / regionsY;
+      
+      // Skip regional distribution for cities to ensure we only get the absolute best location
+      let placedInFirstPass = 0;
+      let remainingToPlace = count;
+      
+      if (type !== 'city') {
+        // First pass: try to place one settlement in each region if possible
+        const regionSettlements = new Map<string, boolean>();
+        for (let rx = 0; rx < regionsX; rx++) {
+          for (let ry = 0; ry < regionsY; ry++) {
+            const regionKey = `${rx},${ry}`;
+            // Find candidates in this region
+            const regionCandidates = candidates.filter(t => {
+              const regionX = Math.floor(t.q / regionWidth);
+              const regionY = Math.floor(t.r / regionHeight);
+              return regionX === rx && regionY === ry;
+            });
+            
+            if (regionCandidates.length > 0) {
+              // Score and pick best candidate in this region
+              const bestCandidate = regionCandidates
+                .map(t => ({ t, score: settlementScore(t) }))
+                .sort((a, b) => b.score - a.score)[0].t;
+              
+              // Check minimum distance to existing settlements
+              let tooClose = false;
+              for (const t of newTiles) {
+                if (t.settlement && Math.abs(t.q - bestCandidate.q) + Math.abs(t.r - bestCandidate.r) < minDist) {
+                    tooClose = true;
+                    break;
+                }
+              }
+              
+              if (!tooClose) {
+                bestCandidate.settlement = type;
+                taken.add(bestCandidate.id);
+                regionSettlements.set(regionKey, true);
+              }
+            }
+          }
+        }
+        
+        // Count how many we've placed in the first pass
+        placedInFirstPass = Array.from(regionSettlements.values()).filter(v => v).length;
+        remainingToPlace = count - placedInFirstPass;
+      }
+      
+      let placed = 0;
+      let i = 0;
+      while (placed < remainingToPlace && i < candidates.length) {
+        const tile = candidates[i];
+        // Skip if already taken in region pass
+        if (taken.has(tile.id)) {
+          i++;
+          continue;
+        }
+        
+        // Check min distance to other settlements
+        let ok = true;
+        for (const t of newTiles) {
+          if (t.settlement && Math.abs(t.q - tile.q) + Math.abs(t.r - tile.r) < minDist) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) {
+          tile.settlement = type;
+          taken.add(tile.id);
+          placed++;
+        }
+        i++;
+      }
+    }
+    placeSettlements('city', cityCount, 5); // Reduced minimum distance
+    placeSettlements('town', townCount, 3); // Reduced minimum distance
+    placeSettlements('village', villageCount, 2); // Same for villages
+
     setTiles(newTiles);
     setTileMap(tileMap);
   };
@@ -813,6 +947,65 @@ export default function HexMap() {
                       <text x="-36" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">W</text>
                       <text x="36" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">E</text>
                     </symbol>
+                    {/* Settlement symbols */}
+                    <symbol id="settlement-city" viewBox="-10 -10 20 20">
+                      {/* Side buildings (shorter) */}
+                      <path d="M-8,-2 L-8,4 L-5,4 L-5,-2 L-6.5,-4 Z" fill="#444" stroke="#222" strokeWidth="0.5" />
+                      <path d="M5,-2 L5,4 L8,4 L8,-2 L6.5,-4 Z" fill="#444" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Middle layer buildings */}
+                      <path d="M-4,-3 L-4,5 L-1,5 L-1,-3 L-2.5,-5 Z" fill="#333" stroke="#222" strokeWidth="0.5" />
+                      <path d="M1,-3 L1,5 L4,5 L4,-3 L2.5,-5 Z" fill="#333" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Foreground buildings - larger central structure */}
+                      <path d="M-2,-6 L-2,6 L2,6 L2,-6 L0,-9 Z" fill="#222" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Windows/details */}
+                      <rect x="-1" y="0" width="0.8" height="1" fill="#fff" />
+                      <rect x="0.2" y="0" width="0.8" height="1" fill="#fff" />
+                      <rect x="-1" y="-3" width="0.8" height="1" fill="#fff" />
+                      <rect x="0.2" y="-3" width="0.8" height="1" fill="#fff" />
+                      <rect x="-3" y="1" width="0.8" height="1" fill="#fff" />
+                      <rect x="2.2" y="1" width="0.8" height="1" fill="#fff" />
+                      <rect x="-7" y="1" width="0.8" height="1" fill="#fff" />
+                      <rect x="6.2" y="1" width="0.8" height="1" fill="#fff" />
+                    </symbol>
+                    <symbol id="settlement-town" viewBox="-10 -10 20 20">
+                      {/* Background buildings */}
+                      <path d="M-6,-2 L-6,3 L-3,3 L-3,-2 L-4.5,-4 Z" fill="#444" stroke="#222" strokeWidth="0.5" />
+                      <path d="M3,-2 L3,3 L6,3 L6,-2 L4.5,-4 Z" fill="#444" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Main buildings */}
+                      <path d="M-2,-4 L-2,4 L1,4 L1,-4 L-0.5,-6 Z" fill="#333" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Foreground building */}
+                      <path d="M-1,4 L-1,6 L3,6 L3,4 L1,2 Z" fill="#222" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Windows/details */}
+                      <rect x="-1" y="0" width="0.6" height="0.8" fill="#fff" />
+                      <rect x="-5" y="0" width="0.6" height="0.8" fill="#fff" />
+                      <rect x="4" y="0" width="0.6" height="0.8" fill="#fff" />
+                      <rect x="0.5" y="4.5" width="0.6" height="0.8" fill="#fff" />
+                    </symbol>
+                    <symbol id="settlement-village" viewBox="-10 -10 20 20">
+                      {/* Small field/land */}
+                      <path d="M-5,3 L-5,5 L-2,5 L-2,3 Z" fill="#555" stroke="none" />
+                      <path d="M2,3 L2,5 L5,5 L5,3 Z" fill="#555" stroke="none" />
+                      
+                      {/* Main farmhouse */}
+                      <path d="M-3,-1 L-3,3 L1,3 L1,-1 L-1,-3 Z" fill="#333" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Barn/outbuilding */}
+                      <path d="M2,0 L2,3 L4,3 L4,0 L3,-1 Z" fill="#222" stroke="#222" strokeWidth="0.5" />
+                      
+                      {/* Fence or field boundary */}
+                      <line x1="-5" y1="5" x2="5" y2="5" stroke="#222" strokeWidth="0.3" />
+                      <line x1="-5" y1="5" x2="-5" y2="3" stroke="#222" strokeWidth="0.3" />
+                      <line x1="5" y1="5" x2="5" y2="3" stroke="#222" strokeWidth="0.3" />
+                      
+                      {/* Window */}
+                      <rect x="-2" y="0.5" width="0.6" height="0.6" fill="#fff" />
+                    </symbol>
                   </>
                 );
               })()}
@@ -822,7 +1015,13 @@ export default function HexMap() {
               {tiles.map((tile) => {
                 const center = axialToPixel(tile.q, tile.r);
                 const isWater = tile.terrain === TerrainType.WATER;
-                const fillColor = isWater ? '#4A90E2' : getTerrainColor(tile.terrain);
+                // Use settlement-specific color for settlement tiles
+                let fillColor;
+                if (tile.settlement) {
+                  fillColor = '#c5c5c5'; // Lighter gray for settlements
+                } else {
+                  fillColor = isWater ? '#4A90E2' : getTerrainColor(tile.terrain);
+                }
                 return (
                   <polygon
                     key={`terrain-${tile.id}`}
@@ -906,7 +1105,7 @@ export default function HexMap() {
               {/* Forest brushing: detect clusters and scatter tree symbols (now rendered after polygons) */}
               {(() => {
                 // 1. Find all forest tiles
-                const forestTiles = tiles.filter(t => t.terrain === TerrainType.FOREST);
+                const forestTiles = tiles.filter(t => t.terrain === TerrainType.FOREST && !t.settlement);
                 const visited = new Set<string>();
                 const clusters: any[] = [];
                 // 2. BFS to find contiguous clusters
@@ -955,7 +1154,7 @@ export default function HexMap() {
                 // --- Mountain and hill brushing ---
                 // Helper to brush symbols for a given terrain type and symbol, excluding river tiles
                 function brushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number]) {
-                  const terrainTiles = tiles.filter(t => t.terrain === terrain);
+                  const terrainTiles = tiles.filter(t => t.terrain === terrain && !t.settlement);
                   const visited = new Set<string>();
                   const clusters: any[] = [];
                   // 2. BFS to find contiguous clusters
@@ -1146,6 +1345,39 @@ export default function HexMap() {
                   ...brushUses,
                 ];
               })()}
+
+              {/* Layer 5: Settlements */}
+              {tiles.map((tile) => {
+                if (!tile.settlement) return null;
+                const center = axialToPixel(tile.q, tile.r);
+                let symbolId, size;
+                switch (tile.settlement) {
+                  case 'city':
+                    symbolId = 'settlement-city';
+                    size = hexSize * 1.8;
+                    break;
+                  case 'town':
+                    symbolId = 'settlement-town';
+                    size = hexSize * 1.5;
+                    break;
+                  case 'village':
+                  default:
+                    symbolId = 'settlement-village';
+                    size = hexSize * 1.3;
+                    break;
+                }
+                return (
+                  <g key={`settlement-${tile.id}`} transform={`translate(${center.x},${center.y}) scale(1,0.85)`}>
+                    <use
+                      href={`#${symbolId}`}
+                      x={-size/2}
+                      y={-size/2}
+                      width={size}
+                      height={size}
+                    />
+                  </g>
+                );
+              })}
 
               {/* Map Name and Windrose overlay (bottom left, compact, classic style) */}
               {(() => {
