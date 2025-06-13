@@ -40,6 +40,28 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser to view the app.
 
+### 3. Build for production
+
+```bash
+npm run build
+# or
+yarn build
+# or
+pnpm build
+# or
+bun run build
+```
+
+### 4. Generate static export (for static hosting)
+
+```bash
+npm run export
+# or
+npm run build:static
+```
+
+This creates an `out/` directory with static HTML, CSS, and JavaScript files that can be deployed to any static hosting service (GitHub Pages, Netlify, AWS S3, etc.).
+
 ## Usage
 
 - Click the green floating button in the top-left to generate a new random map.
@@ -55,7 +77,24 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to view the 
 
 ## Deployment
 
-You can deploy this app to Vercel, Netlify, or any platform that supports Next.js. For Vercel, simply connect your GitHub repo and follow their instructions.
+### Dynamic Hosting (with Next.js server)
+You can deploy this app to platforms that support Next.js:
+- **Vercel**: Simply connect your GitHub repo and deploy
+- **Netlify**: Use the Next.js build settings
+- **Railway, Render, or similar**: Deploy with Node.js runtime
+
+### Static Hosting (no server required)
+For static hosting, first generate the static export:
+
+```bash
+npm run export
+```
+
+Then deploy the `out/` directory to:
+- **GitHub Pages**: Upload the contents of `out/`
+- **Netlify**: Drag and drop the `out/` folder
+- **AWS S3 + CloudFront**: Upload to S3 bucket
+- **Any static file hosting service**
 
 ## License
 
