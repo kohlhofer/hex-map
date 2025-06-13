@@ -113,9 +113,9 @@ const getTerrainColor = (terrain: TerrainType): string => {
     case TerrainType.HILLS:
       return '#9CAF7F'; // same as grassland
     case TerrainType.SWAMP:
-      return '#8B9E6B'; // desaturated olive
+      return '#B2A76B'; // swapped with brush - already desaturated
     case TerrainType.BRUSH:
-      return '#B2A76B'; // already desaturated
+      return '#8B9E6B'; // swapped with swamp - desaturated olive
     default:
       return '#000000';
   }
@@ -162,6 +162,49 @@ export default function HexMap() {
   // Set of road segments where each key is "id1|id2" (ids sorted)
   const [roadSegments, setRoadSegments] = useState<Set<string>>(new Set());
   const [roadPaths, setRoadPaths] = useState<Point[][]>([]);
+
+  // Calculate map dimensions based on viewport
+  const calculateMapDimensions = () => {
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Reserve space for controls and legend at bottom (approximately 200px)
+    const reservedHeight = 200;
+    const availableHeight = viewportHeight - reservedHeight;
+    
+    // Calculate hex dimensions in pixels
+    const hexWidth = hexSize * 1.5; // Each hex is 1.5 * hexSize wide
+    const hexHeight = hexSize * Math.sqrt(3) * 0.7; // Each hex is sqrt(3) * hexSize * 0.7 tall
+    
+    // Calculate how many hexes can fit with some padding
+    const padding = 100; // Leave some padding around the map
+    const maxHexesWidth = Math.floor((viewportWidth - padding) / hexWidth);
+    const maxHexesHeight = Math.floor((availableHeight - padding) / hexHeight);
+    
+    // Set reasonable bounds and ensure the map is not too small
+    const newMapWidth = Math.max(20, Math.min(50, maxHexesWidth));
+    const newMapHeight = Math.max(15, Math.min(35, maxHexesHeight));
+    
+    return { width: newMapWidth, height: newMapHeight };
+  };
+
+  // Update map dimensions on mount and window resize
+  useEffect(() => {
+    const updateDimensions = () => {
+      const { width, height } = calculateMapDimensions();
+      setMapWidth(width);
+      setMapHeight(height);
+    };
+
+    // Set initial dimensions
+    updateDimensions();
+
+    // Listen for window resize
+    window.addEventListener('resize', updateDimensions);
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, [hexSize]);
 
   // Convert axial coordinates to pixel coordinates (flat-topped, rectangular grid)
   const axialToPixel = (q: number, r: number): Point => {
@@ -1023,7 +1066,7 @@ export default function HexMap() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen flex flex-col items-center justify-center" style={{ backgroundColor: '#4A90E2' }}>
       {/* Floating Generate Button (restored, fixed top-left) */}
       <div className="fixed top-4 left-4 z-20">
         <button
@@ -1037,12 +1080,13 @@ export default function HexMap() {
           </svg>
         </button>
       </div>
-      {/* Map SVG edge-to-edge, top of page */}
-      <div className="w-full" style={{ margin: 0, padding: 0 }}>
-        <div className="relative w-full" style={{ height: `${bounds.maxY - bounds.minY}px`, margin: 0, padding: 0 }}>
+      
+      {/* Centered Map Container */}
+      <div className="flex-1 flex items-center justify-center w-full">
+        <div className="relative" style={{ width: `${bounds.maxX - bounds.minX}px`, height: `${bounds.maxY - bounds.minY}px` }}>
           <svg
             className="w-full h-full block"
-            style={{ display: 'block', margin: 0, padding: 0 }}
+            style={{ display: 'block' }}
             viewBox={`${bounds.minX} ${bounds.minY} ${bounds.maxX - bounds.minX} ${bounds.maxY - bounds.minY}`}
           >
             <defs>
@@ -1233,15 +1277,16 @@ export default function HexMap() {
             </defs>
             <g clipPath="url(#map-clip)">
               {/* Layer 1: Base terrain hexes */}
-              {tiles.map((tile) => {
+              {tiles
+                .filter((tile) => tile.terrain !== TerrainType.WATER) // Don't render water tiles, use background instead
+                .map((tile) => {
                 const center = axialToPixel(tile.q, tile.r);
-                const isWater = tile.terrain === TerrainType.WATER;
                 // Use settlement-specific color for settlement tiles
                 let fillColor;
                 if (tile.settlement) {
                   fillColor = '#c5c5c5'; // Lighter gray for settlements
                 } else {
-                  fillColor = isWater ? '#4A90E2' : getTerrainColor(tile.terrain);
+                  fillColor = getTerrainColor(tile.terrain);
                 }
                 return (
                   <polygon
@@ -1260,7 +1305,7 @@ export default function HexMap() {
               {/* Layer 2: Hover overlay */}
               {hoveredTile && (() => {
                 const tile = tiles.find(t => t.id === hoveredTile);
-                if (!tile) return null;
+                if (!tile || tile.terrain === TerrainType.WATER) return null; // Don't show hover for water tiles
                 const center = axialToPixel(tile.q, tile.r);
                 return (
                   <polygon
@@ -1451,10 +1496,10 @@ export default function HexMap() {
                               transform = `translate(${-size / 2},${-size * 0.7})`; // Trees sit higher
                               break;
                             case 'swamp-marsh':
-                              transform = `translate(${-size / 2},${-size * 0.4})`; // Marsh sits higher
+                              transform = `translate(${-size / 2},${-size * 0.3})`; // Brush sits higher (swapped)
                               break;
                             case 'brush-bush':
-                              transform = `translate(${-size / 2},${-size * 0.3})`; // Brush sits higher
+                              transform = `translate(${-size / 2},${-size * 0.4})`; // Marsh sits higher (swapped)
                               break;
                             case 'grass-tuft':
                               transform = `translate(${-size / 2},${-size * 0.2})`; // Grass sits higher
@@ -1554,8 +1599,8 @@ export default function HexMap() {
                   });
                 }
                 const desertUses = denseDesertSymbols();
-                const swampUses = brushTerrainSymbols(TerrainType.SWAMP, 'swamp-marsh', [0.7, 1.0]);
-                const brushUses = brushTerrainSymbols(TerrainType.BRUSH, 'brush-bush', [0.7, 1.0]);
+                const swampUses = brushTerrainSymbols(TerrainType.SWAMP, 'brush-bush', [0.7, 1.0]); // swapped symbol
+                const brushUses = brushTerrainSymbols(TerrainType.BRUSH, 'swamp-marsh', [0.7, 1.0]); // swapped symbol
                 return [
                   ...treeUses,
                   ...mountainUses,
@@ -1700,111 +1745,82 @@ export default function HexMap() {
             </g>
           </svg>
         </div>
+      </div>
 
-        {/* Controls below map */}
-        <div className="mt-8 space-y-4 max-w-6xl mx-auto px-4">
-          <div className="flex justify-center gap-4 flex-wrap">
+      {/* Bottom Controls */}
+      <div className="w-full py-6 px-4">
+        {/* Seed Control */}
+        <div className="flex justify-center items-center gap-4">
+          <form onSubmit={e => { e.preventDefault(); setSeed(seedInput); }} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={seedInput}
+              onChange={e => setSeedInput(e.target.value)}
+              className="px-2 py-1 border rounded"
+              placeholder="Seed"
+              style={{ width: 100 }}
+            />
             <button
-              onClick={() => setMapWidth(prev => Math.max(6, prev - 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              type="submit"
+              className="px-2 py-1 bg-gray-300 rounded hover:bg-gray-400"
             >
-              Decrease Width
+              Set Seed
             </button>
-            <button
-              onClick={() => setMapWidth(prev => Math.min(40, prev + 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Increase Width
-            </button>
-            <button
-              onClick={() => setMapHeight(prev => Math.max(6, prev - 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Decrease Height
-            </button>
-            <button
-              onClick={() => setMapHeight(prev => Math.min(30, prev + 1))}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Increase Height
-            </button>
-          </div>
-          
-          <div className="flex justify-center items-center gap-4">
-            <form onSubmit={e => { e.preventDefault(); setSeed(seedInput); }} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={seedInput}
-                onChange={e => setSeedInput(e.target.value)}
-                className="px-2 py-1 border rounded"
-                placeholder="Seed"
-                style={{ width: 100 }}
-              />
-              <button
-                type="submit"
-                className="px-2 py-1 bg-gray-300 rounded hover:bg-gray-400"
-              >
-                Set Seed
-              </button>
-            </form>
-          </div>
-          
-          <p className="text-center text-gray-600">Map Width: {mapWidth}, Map Height: {mapHeight}</p>
+          </form>
         </div>
+      </div>
 
-        <div className="mt-8 grid grid-cols-3 gap-4 max-w-2xl mx-auto">
+      {/* Compact Legend - Fixed Bottom Right */}
+      <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-300 p-3 z-10">
+        <div className="text-xs font-semibold text-gray-700 mb-2">Terrain</div>
+        <div className="grid grid-cols-2 gap-1 text-xs">
           {Object.values(TerrainType).map((terrain) => (
-            <div key={terrain} className="flex items-center gap-2">
+            <div key={terrain} className="flex items-center gap-1">
               <div
-                className="w-6 h-6 rounded border border-gray-400"
+                className="w-3 h-3 rounded border border-gray-300 flex-shrink-0"
                 style={{ backgroundColor: getTerrainColor(terrain) }}
               />
-              <span className="capitalize text-gray-800">{terrain}</span>
               {terrain !== TerrainType.WATER && (
-                <svg className="w-4 h-4" viewBox="-10 -10 20 20">
+                <svg className="w-3 h-3 flex-shrink-0" viewBox="-10 -10 20 20">
                   {terrain === TerrainType.FOREST && (
-                    <>
-                      <g style={{ color: getSymbolColor(TerrainType.FOREST) }}>
-                        <use href="#forest-evergreen" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.FOREST)} />
-                        <use href="#forest-broadleaf" width="16" height="16" transform="translate(0,-8)" stroke={getSymbolColor(TerrainType.FOREST)} />
-                      </g>
-                    </>
+                    <g style={{ color: getSymbolColor(TerrainType.FOREST) }}>
+                      <use href="#forest-evergreen" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.FOREST)} strokeWidth="3" />
+                    </g>
                   )}
                   {terrain === TerrainType.MOUNTAIN && (
                     <g style={{ color: getSymbolColor(TerrainType.MOUNTAIN) }}>
-                      <use href="#mountain-peak" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.MOUNTAIN)} />
+                      <use href="#mountain-peak" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.MOUNTAIN)} strokeWidth="3" />
                     </g>
                   )}
                   {terrain === TerrainType.HILLS && (
                     <g style={{ color: getSymbolColor(TerrainType.HILLS) }}>
-                      <use href="#hill-arch" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.HILLS)} />
+                      <use href="#hill-arch" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.HILLS)} strokeWidth="3" />
                     </g>
                   )}
                   {terrain === TerrainType.GRASSLAND && (
                     <g style={{ color: getSymbolColor(TerrainType.GRASSLAND) }}>
-                      <use href="#grass-tuft" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.GRASSLAND)} />
+                      <use href="#grass-tuft" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.GRASSLAND)} strokeWidth="2" />
                     </g>
                   )}
                   {terrain === TerrainType.DESERT && (
-                    <>
-                      <g style={{ color: getSymbolColor(TerrainType.DESERT) }}>
-                        <use href="#desert-dot" width="4" height="4" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.DESERT)} />
-                        <use href="#desert-rock1" width="8" height="8" transform="translate(0,-8)" stroke={getSymbolColor(TerrainType.DESERT)} />
-                      </g>
-                    </>
+                    <g style={{ color: getSymbolColor(TerrainType.DESERT) }}>
+                      <use href="#desert-dot" width="6" height="6" transform="translate(-3,-3)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
+                      <use href="#desert-rock1" width="10" height="10" transform="translate(2,-5)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
+                    </g>
                   )}
                   {terrain === TerrainType.SWAMP && (
                     <g style={{ color: getSymbolColor(TerrainType.SWAMP) }}>
-                      <use href="#swamp-marsh" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.SWAMP)} />
+                      <use href="#brush-bush" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.SWAMP)} strokeWidth="2" />
                     </g>
                   )}
                   {terrain === TerrainType.BRUSH && (
                     <g style={{ color: getSymbolColor(TerrainType.BRUSH) }}>
-                      <use href="#brush-bush" width="16" height="16" transform="translate(-8,-8)" stroke={getSymbolColor(TerrainType.BRUSH)} />
+                      <use href="#swamp-marsh" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.BRUSH)} strokeWidth="2" />
                     </g>
                   )}
                 </svg>
               )}
+              <span className="capitalize text-gray-700 text-xs truncate">{terrain}</span>
             </div>
           ))}
         </div>
