@@ -1794,6 +1794,20 @@ export default function HexMap() {
             </React.Fragment>
           ))}
         </div>
+        {/* Credit line */}
+        <div className="text-center mt-2 pt-2 border-t border-gray-200">
+          <span className="text-gray-500 text-xs">
+            An experiment by{' '}
+            <a
+              href="https://kohlhofer.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline"
+            >
+              Kohlhofer
+            </a>
+          </span>
+        </div>
       </div>
     </div>
   );
