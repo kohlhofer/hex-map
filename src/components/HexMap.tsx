@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import React from 'react';
 
 // Define terrain types
 export enum TerrainType {
@@ -154,8 +155,8 @@ export default function HexMap() {
   const [tiles, setTiles] = useState<HexTile[]>([]);
   const [tileMap, setTileMap] = useState<Record<string, HexTile>>({});
   const [hoveredTile, setHoveredTile] = useState<string | null>(null);
-  const [mapWidth, setMapWidth] = useState(35); // width of the map (in hexes)
-  const [mapHeight, setMapHeight] = useState(20); // height of the map (in hexes)
+  const [mapWidth, setMapWidth] = useState(20); // Start with minimum width
+  const [mapHeight, setMapHeight] = useState(15); // Start with minimum height
   const [hexSize, setHexSize] = useState(20); // size of hexagons in pixels (smaller)
   const [seed, setSeed] = useState('12345');
   const [seedInput, setSeedInput] = useState('12345');
@@ -168,8 +169,8 @@ export default function HexMap() {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
-    // Reserve space for controls and legend at bottom (approximately 200px)
-    const reservedHeight = 200;
+    // Reserve space for legend at bottom right (approximately 120px)
+    const reservedHeight = 120;
     const availableHeight = viewportHeight - reservedHeight;
     
     // Calculate hex dimensions in pixels
@@ -181,30 +182,71 @@ export default function HexMap() {
     const maxHexesWidth = Math.floor((viewportWidth - padding) / hexWidth);
     const maxHexesHeight = Math.floor((availableHeight - padding) / hexHeight);
     
-    // Set reasonable bounds and ensure the map is not too small
-    const newMapWidth = Math.max(20, Math.min(50, maxHexesWidth));
-    const newMapHeight = Math.max(15, Math.min(35, maxHexesHeight));
+    // Calculate viewport aspect ratio
+    const viewportAspectRatio = viewportWidth / availableHeight;
     
-    return { width: newMapWidth, height: newMapHeight };
+    // Start with what actually fits on screen
+    let targetWidth = maxHexesWidth;
+    let targetHeight = maxHexesHeight;
+    
+    // Adjust based on aspect ratio to better utilize the space
+    if (viewportAspectRatio > 1.5) {
+      // Wide screen - use full width, adjust height proportionally
+      targetWidth = maxHexesWidth;
+      const proportionalHeight = Math.round(targetWidth / viewportAspectRatio);
+      targetHeight = Math.min(maxHexesHeight, proportionalHeight);
+    } else if (viewportAspectRatio < 0.8) {
+      // Tall screen - use full height, adjust width proportionally  
+      targetHeight = maxHexesHeight;
+      const proportionalWidth = Math.round(targetHeight * viewportAspectRatio);
+      targetWidth = Math.min(maxHexesWidth, proportionalWidth);
+    }
+    // For balanced screens (0.8-1.5), just use maximum that fits
+    
+    // Apply reasonable minimum bounds if screen is very small
+    targetWidth = Math.max(targetWidth, 10);
+    targetHeight = Math.max(targetHeight, 8);
+    
+    // Apply reasonable maximum bounds for performance
+    targetWidth = Math.min(targetWidth, 50);
+    targetHeight = Math.min(targetHeight, 35);
+    
+    // Debug logging
+    console.log('Viewport:', viewportWidth, 'x', viewportHeight);
+    console.log('Available height:', availableHeight);
+    console.log('Aspect ratio:', viewportAspectRatio.toFixed(2));
+    console.log('Max hexes that fit:', maxHexesWidth, 'x', maxHexesHeight);
+    console.log('Final dimensions:', targetWidth, 'x', targetHeight);
+    
+    return { width: targetWidth, height: targetHeight };
   };
 
-  // Update map dimensions on mount and window resize
+  // Update map dimensions and generate map
   useEffect(() => {
-    const updateDimensions = () => {
+    const updateMapWithDimensions = () => {
       const { width, height } = calculateMapDimensions();
       setMapWidth(width);
       setMapHeight(height);
+      // Don't generate map immediately - let the state update first
     };
 
     // Set initial dimensions
-    updateDimensions();
+    updateMapWithDimensions();
 
     // Listen for window resize
-    window.addEventListener('resize', updateDimensions);
+    window.addEventListener('resize', updateMapWithDimensions);
     
     // Cleanup
-    return () => window.removeEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateMapWithDimensions);
   }, [hexSize]);
+
+  // Generate map when dimensions or seed change
+  useEffect(() => {
+    // Only generate if we have valid dimensions (not the initial defaults)
+    if (mapWidth > 0 && mapHeight > 0) {
+      generateMap();
+    }
+  }, [mapWidth, mapHeight, seed]);
 
   // Convert axial coordinates to pixel coordinates (flat-topped, rectangular grid)
   const axialToPixel = (q: number, r: number): Point => {
@@ -480,7 +522,7 @@ export default function HexMap() {
         }
       }
       if (iterations >= MAX_ITER) {
-        console.warn('River pathfinding exceeded max iterations');
+        // (debug removed)
       }
       return null;
     }
@@ -737,7 +779,7 @@ export default function HexMap() {
       }
       
       if (iterations >= MAX_ITER) {
-        console.warn('Road pathfinding exceeded max iterations');
+        // (debug removed)
       }
       return null;
     }
@@ -886,10 +928,6 @@ export default function HexMap() {
     ];
     return terrains[Math.floor(Math.random() * terrains.length)];
   };
-
-  useEffect(() => {
-    generateMap();
-  }, [mapWidth, mapHeight, seed]);
 
   // Helper function to create a seeded random generator for consistent symbol placement
   const createSeededRandom = (seed: string) => {
@@ -1066,7 +1104,14 @@ export default function HexMap() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center" style={{ backgroundColor: '#4A90E2' }}>
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#4A90E2' }}>
+      {/* Header with Title */}
+      <div className="w-full py-8 text-center">
+        <h1 className="text-2xl font-serif text-[#223344] opacity-80 italic tracking-wide">
+          {mapName}
+        </h1>
+      </div>
+
       {/* Floating Generate Button (restored, fixed top-left) */}
       <div className="fixed top-4 left-4 z-20">
         <button
@@ -1080,9 +1125,9 @@ export default function HexMap() {
           </svg>
         </button>
       </div>
-      
-      {/* Centered Map Container */}
-      <div className="flex-1 flex items-center justify-center w-full">
+
+      {/* Map Container */}
+      <div className="flex justify-center w-full">
         <div className="relative" style={{ width: `${bounds.maxX - bounds.minX}px`, height: `${bounds.maxY - bounds.minY}px` }}>
           <svg
             className="w-full h-full block"
@@ -1178,40 +1223,8 @@ export default function HexMap() {
                       <circle cx="0" cy="0" r="0.7" />
                     </symbol>
                     {/* Classic Windrose SVG symbol */}
-                    <symbol id="windrose" viewBox="-45 -50 90 100">
-                      {/* Outer circle (no fill) */}
-                      <circle cx="0" cy="0" r="30" fill="none" stroke="#222" strokeWidth="1.2" />
-                      {/* Dotted border */}
-                      {Array.from({length: 32}).map((_, i) => {
-                        const angle = (i / 32) * 2 * Math.PI;
-                        const r = 27.5;
-                        return (
-                          <circle key={i} cx={Math.cos(angle)*r} cy={Math.sin(angle)*r} r={0.9} fill="#222" />
-                        );
-                      })}
-                      {/* Secondary points (light) */}
-                      <polygon points="0,-22 2.5,-8 0,-13 -2.5,-8" fill="#bcd" />
-                      <polygon points="0,22 2.5,8 0,13 -2.5,8" fill="#bcd" />
-                      <polygon points="-22,0 -8,2.5 -13,0 -8,-2.5" fill="#bcd" />
-                      <polygon points="22,0 8,2.5 13,0 8,-2.5" fill="#bcd" />
-                      <polygon points="15,-15 8,-8 13,-13 8,-8" fill="#bcd" />
-                      <polygon points="-15,-15 -8,-8 -13,-13 -8,-8" fill="#bcd" />
-                      <polygon points="15,15 8,8 13,13 8,8" fill="#bcd" />
-                      <polygon points="-15,15 -8,8 -13,13 -8,8" fill="#bcd" />
-                      {/* Main points (dark, chunky, inside ring) */}
-                      <polygon points="0,-22 8,-8 0,-15 -8,-8" fill="#223344" />
-                      <polygon points="0,22 8,8 0,15 -8,8" fill="#223344" />
-                      <polygon points="-22,0 -8,8 -15,0 -8,-8" fill="#223344" />
-                      <polygon points="22,0 8,8 15,0 8,-8" fill="#223344" />
-                      {/* Inner circle (no fill) */}
-                      <circle cx="0" cy="0" r="7" fill="none" stroke="#222" strokeWidth="0.8" />
-                      <circle cx="0" cy="0" r="2.5" fill="#223344" />
-                      {/* Cardinal directions (outside ring, more margin) */}
-                      <text x="0" y="-43" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">N</text>
-                      <text x="0" y="48" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">S</text>
-                      <text x="-41" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">W</text>
-                      <text x="41" y="5" textAnchor="middle" fontSize="11" fontFamily="serif" fill="#223344" fontWeight="bold">E</text>
-                    </symbol>
+                    {/* <symbol id="windrose" viewBox="-45 -50 90 100">
+                    </symbol> */}
                     {/* Settlement symbols */}
                     <symbol id="settlement-city" viewBox="-10 -10 20 20">
                       {/* Side buildings (shorter) */}
@@ -1560,7 +1573,8 @@ export default function HexMap() {
                   const rockTypes = ['desert-rock1', 'desert-rock2', 'desert-rock3'];
                   const strokeColor = getSymbolColor(TerrainType.DESERT);
                   const desertTiles = tiles.filter(t => t.terrain === TerrainType.DESERT);
-                  console.log('Desert tiles (no river):', desertTiles.length, 'Desert symbols:', positions.length);
+                  // (debug removed)
+                  // console.log('Desert tiles (no river):', desertTiles.length, 'Desert symbols:', positions.length);
                   return positions.map((pos, i) => {
                     const dotSeed = `desert-dot-${i}-${pos.x.toFixed(1)}-${pos.y.toFixed(1)}`;
                     const dotRand = createSeededRandom(dotSeed);
@@ -1705,6 +1719,7 @@ export default function HexMap() {
                 let breakIdx = nameLines.indexOf('of') !== -1 ? nameLines.indexOf('of') + 1 : 1;
                 const line1 = nameLines.slice(0, breakIdx).join(' ');
                 const line2 = nameLines.slice(breakIdx).join(' ');
+                return null; // Windrose moved to separate component
                 return (
                   <g style={{ mixBlendMode: 'multiply' }}>
                     <g transform={`translate(${center.x - windroseSize / 2},${center.y - totalHeight / 2}) scale(${scale},${scale * 0.85})`}>
@@ -1713,7 +1728,7 @@ export default function HexMap() {
                     <g transform={`translate(${center.x},${center.y + windroseSize * 0.45}) scale(${scale},${scale * 0.85})`}>
                       <text
                         x={0}
-                        y={0}
+                        y={54}
                         fontFamily="Georgia, Times, serif"
                         fontSize={Math.round(windroseSize * 0.16)}
                         fill="#4a6fa5"
@@ -1747,81 +1762,150 @@ export default function HexMap() {
         </div>
       </div>
 
-      {/* Bottom Controls */}
-      <div className="w-full py-6 px-4">
-        {/* Seed Control */}
-        <div className="flex justify-center items-center gap-4">
-          <form onSubmit={e => { e.preventDefault(); setSeed(seedInput); }} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={seedInput}
-              onChange={e => setSeedInput(e.target.value)}
-              className="px-2 py-1 border rounded"
-              placeholder="Seed"
-              style={{ width: 100 }}
-            />
-            <button
-              type="submit"
-              className="px-2 py-1 bg-gray-300 rounded hover:bg-gray-400"
-            >
-              Set Seed
-            </button>
-          </form>
-        </div>
-      </div>
-
       {/* Compact Legend - Fixed Bottom Right */}
-      <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-300 p-3 z-10">
-        <div className="text-xs font-semibold text-gray-700 mb-2">Terrain</div>
-        <div className="grid grid-cols-2 gap-1 text-xs">
-          {Object.values(TerrainType).map((terrain) => (
-            <div key={terrain} className="flex items-center gap-1">
-              <div
-                className="w-3 h-3 rounded border border-gray-300 flex-shrink-0"
-                style={{ backgroundColor: getTerrainColor(terrain) }}
-              />
-              {terrain !== TerrainType.WATER && (
-                <svg className="w-3 h-3 flex-shrink-0" viewBox="-10 -10 20 20">
-                  {terrain === TerrainType.FOREST && (
-                    <g style={{ color: getSymbolColor(TerrainType.FOREST) }}>
-                      <use href="#forest-evergreen" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.FOREST)} strokeWidth="3" />
-                    </g>
-                  )}
-                  {terrain === TerrainType.MOUNTAIN && (
-                    <g style={{ color: getSymbolColor(TerrainType.MOUNTAIN) }}>
-                      <use href="#mountain-peak" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.MOUNTAIN)} strokeWidth="3" />
-                    </g>
-                  )}
-                  {terrain === TerrainType.HILLS && (
-                    <g style={{ color: getSymbolColor(TerrainType.HILLS) }}>
-                      <use href="#hill-arch" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.HILLS)} strokeWidth="3" />
-                    </g>
-                  )}
-                  {terrain === TerrainType.GRASSLAND && (
-                    <g style={{ color: getSymbolColor(TerrainType.GRASSLAND) }}>
-                      <use href="#grass-tuft" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.GRASSLAND)} strokeWidth="2" />
-                    </g>
-                  )}
-                  {terrain === TerrainType.DESERT && (
-                    <g style={{ color: getSymbolColor(TerrainType.DESERT) }}>
-                      <use href="#desert-dot" width="6" height="6" transform="translate(-3,-3)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
-                      <use href="#desert-rock1" width="10" height="10" transform="translate(2,-5)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
-                    </g>
-                  )}
-                  {terrain === TerrainType.SWAMP && (
-                    <g style={{ color: getSymbolColor(TerrainType.SWAMP) }}>
-                      <use href="#brush-bush" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.SWAMP)} strokeWidth="2" />
-                    </g>
-                  )}
-                  {terrain === TerrainType.BRUSH && (
-                    <g style={{ color: getSymbolColor(TerrainType.BRUSH) }}>
-                      <use href="#swamp-marsh" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.BRUSH)} strokeWidth="2" />
-                    </g>
-                  )}
-                </svg>
-              )}
-              <span className="capitalize text-gray-700 text-xs truncate">{terrain}</span>
-            </div>
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[95vw] max-w-sm sm:w-auto sm:max-w-none sm:left-auto sm:right-4 sm:translate-x-0 bg-white rounded-lg shadow-lg border border-gray-300 p-3 z-10">
+        <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs whitespace-nowrap">
+          {/* Row-based legend: terrain1 | terrain2 | man-made */}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <React.Fragment key={i}>
+              {/* First column: terrain i */}
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded border border-gray-300 flex-shrink-0" style={{ backgroundColor: getTerrainColor(Object.values(TerrainType)[i]) }} />
+                {Object.values(TerrainType)[i] !== TerrainType.WATER && (
+                  <svg className="w-3 h-3 flex-shrink-0" viewBox="-10 -10 20 20">
+                    {(() => {
+                      const terrain = Object.values(TerrainType)[i];
+                      if (terrain === TerrainType.FOREST) return (
+                        <g style={{ color: getSymbolColor(TerrainType.FOREST) }}>
+                          <use href="#forest-evergreen" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.FOREST)} strokeWidth="3" />
+                        </g>
+                      );
+                      if (terrain === TerrainType.MOUNTAIN) return (
+                        <g style={{ color: getSymbolColor(TerrainType.MOUNTAIN) }}>
+                          <use href="#mountain-peak" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.MOUNTAIN)} strokeWidth="3" />
+                        </g>
+                      );
+                      if (terrain === TerrainType.HILLS) return (
+                        <g style={{ color: getSymbolColor(TerrainType.HILLS) }}>
+                          <use href="#hill-arch" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.HILLS)} strokeWidth="3" />
+                        </g>
+                      );
+                      if (terrain === TerrainType.GRASSLAND) return (
+                        <g style={{ color: getSymbolColor(TerrainType.GRASSLAND) }}>
+                          <use href="#grass-tuft" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.GRASSLAND)} strokeWidth="2" />
+                        </g>
+                      );
+                      if (terrain === TerrainType.DESERT) return (
+                        <g style={{ color: getSymbolColor(TerrainType.DESERT) }}>
+                          <use href="#desert-dot" width="6" height="6" transform="translate(-3,-3)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
+                          <use href="#desert-rock1" width="10" height="10" transform="translate(2,-5)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
+                        </g>
+                      );
+                      if (terrain === TerrainType.SWAMP) return (
+                        <g style={{ color: getSymbolColor(TerrainType.SWAMP) }}>
+                          <use href="#brush-bush" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.SWAMP)} strokeWidth="2" />
+                        </g>
+                      );
+                      if (terrain === TerrainType.BRUSH) return (
+                        <g style={{ color: getSymbolColor(TerrainType.BRUSH) }}>
+                          <use href="#swamp-marsh" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.BRUSH)} strokeWidth="2" />
+                        </g>
+                      );
+                      return null;
+                    })()}
+                  </svg>
+                )}
+                <span className="capitalize text-gray-700 text-xs truncate">{Object.values(TerrainType)[i]}</span>
+              </div>
+              {/* Second column: terrain i+4 */}
+              <div className="flex items-center gap-1">
+                {Object.values(TerrainType)[i+4] && (
+                  <>
+                    <div className="w-3 h-3 rounded border border-gray-300 flex-shrink-0" style={{ backgroundColor: getTerrainColor(Object.values(TerrainType)[i+4]) }} />
+                    {Object.values(TerrainType)[i+4] !== TerrainType.WATER && (
+                      <svg className="w-3 h-3 flex-shrink-0" viewBox="-10 -10 20 20">
+                        {(() => {
+                          const terrain = Object.values(TerrainType)[i+4];
+                          if (terrain === TerrainType.FOREST) return (
+                            <g style={{ color: getSymbolColor(TerrainType.FOREST) }}>
+                              <use href="#forest-evergreen" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.FOREST)} strokeWidth="3" />
+                            </g>
+                          );
+                          if (terrain === TerrainType.MOUNTAIN) return (
+                            <g style={{ color: getSymbolColor(TerrainType.MOUNTAIN) }}>
+                              <use href="#mountain-peak" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.MOUNTAIN)} strokeWidth="3" />
+                            </g>
+                          );
+                          if (terrain === TerrainType.HILLS) return (
+                            <g style={{ color: getSymbolColor(TerrainType.HILLS) }}>
+                              <use href="#hill-arch" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.HILLS)} strokeWidth="3" />
+                            </g>
+                          );
+                          if (terrain === TerrainType.GRASSLAND) return (
+                            <g style={{ color: getSymbolColor(TerrainType.GRASSLAND) }}>
+                              <use href="#grass-tuft" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.GRASSLAND)} strokeWidth="2" />
+                            </g>
+                          );
+                          if (terrain === TerrainType.DESERT) return (
+                            <g style={{ color: getSymbolColor(TerrainType.DESERT) }}>
+                              <use href="#desert-dot" width="6" height="6" transform="translate(-3,-3)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
+                              <use href="#desert-rock1" width="10" height="10" transform="translate(2,-5)" stroke={getSymbolColor(TerrainType.DESERT)} strokeWidth="2" />
+                            </g>
+                          );
+                          if (terrain === TerrainType.SWAMP) return (
+                            <g style={{ color: getSymbolColor(TerrainType.SWAMP) }}>
+                              <use href="#brush-bush" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.SWAMP)} strokeWidth="2" />
+                            </g>
+                          );
+                          if (terrain === TerrainType.BRUSH) return (
+                            <g style={{ color: getSymbolColor(TerrainType.BRUSH) }}>
+                              <use href="#swamp-marsh" width="20" height="20" transform="translate(-10,-10)" stroke={getSymbolColor(TerrainType.BRUSH)} strokeWidth="2" />
+                            </g>
+                          );
+                          return null;
+                        })()}
+                      </svg>
+                    )}
+                    <span className="capitalize text-gray-700 text-xs truncate">{Object.values(TerrainType)[i+4]}</span>
+                  </>
+                )}
+              </div>
+              {/* Third column: man-made items (roads/settlements) */}
+              <div className="flex items-center gap-1">
+                {i === 0 && (
+                  <>
+                    <svg className="w-5 h-3 flex-shrink-0" viewBox="0 0 24 8" style={{ verticalAlign: 'middle' }}>
+                      <path d="M2 6 Q8 2 14 6 Q20 10 22 2" stroke="#333" strokeWidth="2" fill="none" strokeDasharray="6,4" strokeLinecap="round" />
+                    </svg>
+                    <span className="text-gray-700 text-xs truncate">Roads</span>
+                  </>
+                )}
+                {i === 1 && (
+                  <>
+                    <svg className="w-4 h-4" viewBox="-10 -10 20 20">
+                      <use href="#settlement-city" />
+                    </svg>
+                    <span className="text-gray-700 text-xs">City</span>
+                  </>
+                )}
+                {i === 2 && (
+                  <>
+                    <svg className="w-4 h-4" viewBox="-10 -10 20 20">
+                      <use href="#settlement-town" />
+                    </svg>
+                    <span className="text-gray-700 text-xs">Town</span>
+                  </>
+                )}
+                {i === 3 && (
+                  <>
+                    <svg className="w-4 h-4" viewBox="-10 -10 20 20">
+                      <use href="#settlement-village" />
+                    </svg>
+                    <span className="text-gray-700 text-xs">Village</span>
+                  </>
+                )}
+              </div>
+            </React.Fragment>
           ))}
         </div>
       </div>
