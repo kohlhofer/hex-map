@@ -1,105 +1,123 @@
 # Hex Map Generator
 
-A modern, interactive hex map generator built with Next.js and React. This project creates beautiful, procedurally generated island maps with a variety of terrain types, settlements, roads, and a responsive, user-friendly UI.
+A beautiful, interactive hex map generator built with Next.js and TypeScript. Generate fantasy maps with different terrain types, settlements, and roads.
 
 ## Features
 
-- **Procedural Hex Map Generation**: Generates unique island maps with each click, using a seeded random algorithm.
-- **Terrain Types**: Supports water, grassland, forest, desert, mountain, hills, swamp, and brush, each with distinct colors and symbols.
-- **Settlements & Roads**: Cities, towns, and villages are placed based on terrain suitability, and connected by organic, winding roads.
-- **Responsive UI**: The map and legend adapt to any screen size. On mobile, the legend is centered at the bottom; on larger screens, it's bottom-right aligned.
-- **Legend**: Compact, visually consistent legend with all terrain types, roads, and settlements, always visible for easy reference.
-- **Map Title**: The map's name is generated and displayed at the top, replacing the need for a windrose.
-- **Clean, Minimalist Design**: No unnecessary controls—just a floating generate button and a clear, modern look.
+- **Interactive hex grid**: Click to generate new maps
+- **Diverse terrain types**: Water, mountains, forests, grasslands, hills, deserts, swamps, and brush
+- **Settlement generation**: Cities, towns, and villages placed strategically
+- **Road networks**: Connecting settlements with pathfinding
+- **Beautiful visual design**: Hand-crafted SVG symbols and terrain-specific styling
+- **Responsive layout**: Works on desktop and mobile devices
 
 ## Getting Started
 
-### 1. Install dependencies
+### Development
+
+First, install the dependencies:
 
 ```bash
 npm install
-# or
-yarn install
-# or
-pnpm install
-# or
-bun install
 ```
 
-### 2. Run the development server
+Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to view the app.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-### 3. Build for production
+### Build Commands
 
+The project supports multiple build configurations for different deployment scenarios:
+
+#### Standard Build
 ```bash
 npm run build
-# or
-yarn build
-# or
-pnpm build
-# or
-bun run build
 ```
+Creates an optimized production build for standard hosting (root domain or custom domains).
 
-### 4. Generate static export (for static hosting)
-
+#### Static Export (Root Domain)
 ```bash
 npm run export
 # or
 npm run build:static
 ```
+Generates static files in the `out/` directory for hosting on static file servers when deployed to the root of a domain.
 
-This creates an `out/` directory with static HTML, CSS, and JavaScript files that can be deployed to any static hosting service (GitHub Pages, Netlify, AWS S3, etc.).
+#### GitHub Pages / Subfolder Deployment
+```bash
+npm run build:github-pages
+```
+Builds the application with `/hex-map` base path for deployment to GitHub Pages or other services that host in subfolders. All asset paths will be prefixed appropriately.
 
-## Usage
+#### Custom Subfolder Deployment
+```bash
+NEXT_PUBLIC_BASE_PATH=/your-subfolder npm run build
+```
+You can specify any custom subfolder path by setting the `NEXT_PUBLIC_BASE_PATH` environment variable.
 
-- Click the green floating button in the top-left to generate a new random map.
-- The map will resize responsively to your window.
-- The legend explains all map symbols and is always visible (bottom center on mobile, bottom right on desktop).
+### Static File Output
 
-## Development
-
-- Main map logic and UI: `src/components/HexMap.tsx`
-- Edit `HexMap.tsx` to change map generation, rendering, or UI.
-- The app uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-- All debug logging has been removed for production cleanliness.
+All build commands generate static files in the `out/` directory that can be:
+- Uploaded to any static hosting service
+- Served from a CDN
+- Deployed to GitHub Pages, Netlify, Vercel, or similar platforms
 
 ## Deployment
 
-### Dynamic Hosting (with Next.js server)
-You can deploy this app to platforms that support Next.js:
-- **Vercel**: Simply connect your GitHub repo and deploy
-- **Netlify**: Use the Next.js build settings
-- **Railway, Render, or similar**: Deploy with Node.js runtime
+### Dynamic Hosting (Recommended)
+- **Vercel**: Connect your GitHub repository for automatic deployments
+- **Netlify**: Deploy directly from Git with automatic builds
+- **Railway/Render**: Full Next.js hosting with server-side features
 
-### Static Hosting (no server required)
-For static hosting, first generate the static export:
+### Static Hosting
+After running the appropriate build command:
+- **GitHub Pages**: Use `npm run build:github-pages`, then deploy the `out/` folder to your `gh-pages` branch
+- **AWS S3 + CloudFront**: Upload the `out/` folder contents
+- **Google Cloud Storage**: Upload static files from `out/` directory  
+- **Azure Static Web Apps**: Deploy the `out/` folder
+- **Any web server**: Upload the `out/` folder contents to your server's web directory
 
+#### GitHub Pages Deployment Example
 ```bash
-npm run export
+# Build for GitHub Pages
+npm run build:github-pages
+
+# The out/ directory now contains files ready for GitHub Pages
+# Deploy these to your gh-pages branch or configure GitHub Pages to use this output
 ```
 
-Then deploy the `out/` directory to:
-- **GitHub Pages**: Upload the contents of `out/`
-- **Netlify**: Drag and drop the `out/` folder
-- **AWS S3 + CloudFront**: Upload to S3 bucket
-- **Any static file hosting service**
+## Technology Stack
+
+- **Next.js 14**: React framework with App Router
+- **TypeScript**: Type-safe JavaScript
+- **Tailwind CSS**: Utility-first CSS framework
+- **SVG Graphics**: Custom terrain and settlement symbols
+- **Canvas API**: Hex grid rendering and interactions
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── page.tsx          # Main application page
+│   ├── layout.tsx        # Root layout
+│   └── globals.css       # Global styles
+└── components/
+    └── HexMap.tsx        # Main hex map component
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-MIT (or specify your license here)
-
----
-
-Built with [Next.js](https://nextjs.org/) and ❤️ by [your name or team].
+This project is open source and available under the [MIT License](LICENSE).
