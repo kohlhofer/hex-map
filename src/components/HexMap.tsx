@@ -1116,11 +1116,11 @@ export default function HexMap() {
       <div className="fixed top-4 left-4 z-20">
         <button
           onClick={() => { const s = randomSeed(); setSeed(s); setSeedInput(s); }}
-          className="w-10 h-10 flex items-center justify-center bg-white bg-opacity-80 rounded-full shadow hover:bg-green-100 transition-colors border border-gray-300"
+          className="w-10 h-10 flex items-center justify-center bg-[#4A90E2] hover:bg-[#3573b5] transition-colors border-2 border-[#3573b5] rounded-full shadow"
           title="Generate New Map"
           aria-label="Generate New Map"
         >
-          <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582M20 20v-5h-.581M19.418 9A7.978 7.978 0 0012 4a8 8 0 00-7.418 5M4.582 15A7.978 7.978 0 0012 20a8 8 0 007.418-5" />
           </svg>
         </button>

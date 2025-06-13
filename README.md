@@ -1,8 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hex Map Generator
+
+A modern, interactive hex map generator built with Next.js and React. This project creates beautiful, procedurally generated island maps with a variety of terrain types, settlements, roads, and a responsive, user-friendly UI.
+
+## Features
+
+- **Procedural Hex Map Generation**: Generates unique island maps with each click, using a seeded random algorithm.
+- **Terrain Types**: Supports water, grassland, forest, desert, mountain, hills, swamp, and brush, each with distinct colors and symbols.
+- **Settlements & Roads**: Cities, towns, and villages are placed based on terrain suitability, and connected by organic, winding roads.
+- **Responsive UI**: The map and legend adapt to any screen size. On mobile, the legend is centered at the bottom; on larger screens, it's bottom-right aligned.
+- **Legend**: Compact, visually consistent legend with all terrain types, roads, and settlements, always visible for easy reference.
+- **Map Title**: The map's name is generated and displayed at the top, replacing the need for a windrose.
+- **Clean, Minimalist Design**: No unnecessary controls—just a floating generate button and a clear, modern look.
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
+
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+# or
+bun install
+```
+
+### 2. Run the development server
 
 ```bash
 npm run dev
@@ -14,23 +38,29 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser to view the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Click the green floating button in the top-left to generate a new random map.
+- The map will resize responsively to your window.
+- The legend explains all map symbols and is always visible (bottom center on mobile, bottom right on desktop).
 
-## Learn More
+## Development
 
-To learn more about Next.js, take a look at the following resources:
+- Main map logic and UI: `src/components/HexMap.tsx`
+- Edit `HexMap.tsx` to change map generation, rendering, or UI.
+- The app uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+- All debug logging has been removed for production cleanliness.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+You can deploy this app to Vercel, Netlify, or any platform that supports Next.js. For Vercel, simply connect your GitHub repo and follow their instructions.
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+MIT (or specify your license here)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+Built with [Next.js](https://nextjs.org/) and ❤️ by [your name or team].
