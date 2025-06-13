@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import React from 'react';
 
 // Define terrain types
@@ -27,20 +27,6 @@ interface HexTile {
 interface Point {
   x: number;
   y: number;
-}
-
-interface TerrainSymbol {
-  x: number;
-  y: number;
-  scale: number;
-  rotation: number;
-  type: 'evergreen' | 'broadleaf';
-}
-
-interface Hex {
-  q: number;
-  r: number;
-  terrain: TerrainType;
 }
 
 // Seeded RNG (mulberry32)
@@ -75,16 +61,6 @@ function getNeighbors(tile: HexTile, tileMap: Record<string, HexTile>) {
     .filter(n => n);
   return neighbors;
 }
-
-const createGrid = (size: number): { x: number; y: number }[] => {
-  const points: { x: number; y: number }[] = [];
-  for (let x = 0; x < 1; x += size) {
-    for (let y = 0; y < 1; y += size) {
-      points.push({ x, y });
-    }
-  }
-  return points;
-};
 
 // Helper to darken a hex color by a given factor (0-1)
 function darkenColor(hex: string, factor: number = 0.5): string {
@@ -155,17 +131,14 @@ export default function HexMap() {
   const [tiles, setTiles] = useState<HexTile[]>([]);
   const [tileMap, setTileMap] = useState<Record<string, HexTile>>({});
   const [hoveredTile, setHoveredTile] = useState<string | null>(null);
-  const [mapWidth, setMapWidth] = useState(20); // Start with minimum width
-  const [mapHeight, setMapHeight] = useState(15); // Start with minimum height
-  const [hexSize, setHexSize] = useState(20); // size of hexagons in pixels (smaller)
+  const [mapWidth, setMapWidth] = useState(20);
+  const [mapHeight, setMapHeight] = useState(15);
+  const [hexSize] = useState(20);
   const [seed, setSeed] = useState('12345');
-  const [seedInput, setSeedInput] = useState('12345');
-  // Set of road segments where each key is "id1|id2" (ids sorted)
-  const [roadSegments, setRoadSegments] = useState<Set<string>>(new Set());
   const [roadPaths, setRoadPaths] = useState<Point[][]>([]);
 
   // Calculate map dimensions based on viewport
-  const calculateMapDimensions = () => {
+  const calculateMapDimensions = useCallback(() => {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
@@ -201,7 +174,6 @@ export default function HexMap() {
       const proportionalWidth = Math.round(targetHeight * viewportAspectRatio);
       targetWidth = Math.min(maxHexesWidth, proportionalWidth);
     }
-    // For balanced screens (0.8-1.5), just use maximum that fits
     
     // Apply reasonable minimum bounds if screen is very small
     targetWidth = Math.max(targetWidth, 10);
@@ -211,52 +183,18 @@ export default function HexMap() {
     targetWidth = Math.min(targetWidth, 50);
     targetHeight = Math.min(targetHeight, 35);
     
-    // Debug logging
-    console.log('Viewport:', viewportWidth, 'x', viewportHeight);
-    console.log('Available height:', availableHeight);
-    console.log('Aspect ratio:', viewportAspectRatio.toFixed(2));
-    console.log('Max hexes that fit:', maxHexesWidth, 'x', maxHexesHeight);
-    console.log('Final dimensions:', targetWidth, 'x', targetHeight);
-    
     return { width: targetWidth, height: targetHeight };
-  };
-
-  // Update map dimensions and generate map
-  useEffect(() => {
-    const updateMapWithDimensions = () => {
-      const { width, height } = calculateMapDimensions();
-      setMapWidth(width);
-      setMapHeight(height);
-      // Don't generate map immediately - let the state update first
-    };
-
-    // Set initial dimensions
-    updateMapWithDimensions();
-
-    // Listen for window resize
-    window.addEventListener('resize', updateMapWithDimensions);
-    
-    // Cleanup
-    return () => window.removeEventListener('resize', updateMapWithDimensions);
   }, [hexSize]);
 
-  // Generate map when dimensions or seed change
-  useEffect(() => {
-    // Only generate if we have valid dimensions (not the initial defaults)
-    if (mapWidth > 0 && mapHeight > 0) {
-      generateMap();
-    }
-  }, [mapWidth, mapHeight, seed]);
-
   // Convert axial coordinates to pixel coordinates (flat-topped, rectangular grid)
-  const axialToPixel = (q: number, r: number): Point => {
+  const axialToPixel = useCallback((q: number, r: number): Point => {
     const x = hexSize * 1.5 * q;
     const y = hexSize * Math.sqrt(3) * 0.7 * (r + 0.5 * (q % 2)); // 30% less tall
     return { x, y };
-  };
+  }, [hexSize]);
 
   // Generate hexagon points for SVG
-  const getHexPoints = (center: Point): string => {
+  const getHexPoints = useCallback((center: Point): string => {
     const points = [];
     for (let i = 0; i < 6; i++) {
       const angle = 2 * Math.PI / 6 * i;
@@ -265,10 +203,10 @@ export default function HexMap() {
       points.push(`${x},${y}`);
     }
     return points.join(' ');
-  };
+  }, [hexSize]);
 
-  // Generate the map
-  const generateMap = () => {
+  // Generate map function
+  const generateMap = useCallback(() => {
     // Use seeded RNG
     let seedNum = 0;
     for (let i = 0; i < seed.length; i++) {
@@ -706,18 +644,16 @@ export default function HexMap() {
 
     // --- Road Generation ---
     // Disallowed terrains for roads
-    const blockedTerrains = new Set<TerrainType>([
-      TerrainType.WATER,
-      TerrainType.MOUNTAIN,
-      TerrainType.SWAMP,
-    ]);
+    // Removed unused variable blockedTerrains
 
-    // Helper: axial distance
-    function axialDistance(a: HexTile, b: HexTile) {
-      const dq = a.q - b.q;
-      const dr = a.r - b.r;
-      return (Math.abs(dq) + Math.abs(dq + dr) + Math.abs(dr)) / 2;
-    }
+    // Removed unused function axialDistance
+
+    // Removed unused variable bestFrom
+
+    // Removed unused variable desertTiles
+
+    // Change let to const where the variable is never reassigned
+    // Replace all uses of 'any' with a more specific type or 'unknown'
 
     // Pathfinding (A* with cost and deterministic neighbor order) for roads
     function findPath(start: HexTile, goal: HexTile): HexTile[] | null {
@@ -844,7 +780,6 @@ export default function HexMap() {
       const connected: HexTile[] = [roadNodes[0]];
       const unconnected: HexTile[] = roadNodes.slice(1);
       while (unconnected.length > 0) {
-        let bestFrom: HexTile | null = null;
         let bestTo: HexTile | null = null;
         let bestCost = Infinity;
         let bestPath: HexTile[] | null = null;
@@ -860,7 +795,6 @@ export default function HexMap() {
             }
             if (cost < bestCost) {
               bestCost = cost;
-              bestFrom = from;
               bestTo = to;
               bestPath = path;
             }
@@ -878,12 +812,11 @@ export default function HexMap() {
       }
     }
 
-    setRoadSegments(roadSet);
     setRoadPaths(paths);
 
     setTiles(newTiles);
     setTileMap(tileMap);
-  };
+  }, [mapWidth, mapHeight, seed, hexSize]);
 
   // --- Dynamic SVG viewBox calculation ---
   // Find min/max pixel coordinates (crop half a hex inside the outermost hexes)
@@ -917,18 +850,6 @@ export default function HexMap() {
   };
   const bounds = getMapBounds();
 
-  // Get random terrain type (excluding water)
-  const getRandomTerrain = (): TerrainType => {
-    const terrains = [
-      TerrainType.GRASSLAND,
-      TerrainType.FOREST,
-      TerrainType.DESERT,
-      TerrainType.MOUNTAIN,
-      TerrainType.HILLS
-    ];
-    return terrains[Math.floor(Math.random() * terrains.length)];
-  };
-
   // Helper function to create a seeded random generator for consistent symbol placement
   const createSeededRandom = (seed: string) => {
     let seedNum = 0;
@@ -942,42 +863,15 @@ export default function HexMap() {
   const renderTileMap: Record<string, HexTile> = {};
   tiles.forEach(t => { renderTileMap[`${t.q},${t.r}`] = t; });
 
-  const generateTerrainOverlay = (terrain: TerrainType, hex: Hex): TerrainSymbol[] => {
-    switch (terrain) {
-      case 'forest':
-        // Create a denser grid for forests
-        const forestGridSize = 0.15; // Smaller grid cells for more symbols
-        const forestGrid = createGrid(forestGridSize);
-        const forestSymbols = forestGrid
-          .filter(() => Math.random() < 0.85) // Higher chance of placing a symbol
-          .map(({ x, y }): TerrainSymbol => {
-            const jitterX = (Math.random() - 0.5) * forestGridSize * 0.5;
-            const jitterY = (Math.random() - 0.5) * forestGridSize * 0.5;
-            const scale = 0.8 + Math.random() * 0.4; // Slightly smaller base size
-            const rotation = Math.random() * 360;
-            return {
-              x: x + jitterX,
-              y: y + jitterY,
-              scale,
-              rotation,
-              type: Math.random() < 0.6 ? 'evergreen' : 'broadleaf' // More evergreens
-            };
-          });
-        return forestSymbols;
-      default:
-        return [];
-    }
-  };
-
   // Helper to brush symbol positions for a given terrain type, excluding river tiles
   function brushTerrainSymbolPositions(terrain: TerrainType, sizeRange: [number, number]) {
     const terrainTiles = tiles.filter(t => t.terrain === terrain);
     const visited = new Set<string>();
-    const clusters: any[] = [];
+    const clusters: HexTile[][] = [];
     // 2. BFS to find contiguous clusters
     for (const tile of terrainTiles) {
       if (visited.has(tile.id)) continue;
-      const cluster: any[] = [];
+      const cluster: HexTile[] = [];
       const queue = [tile];
       visited.add(tile.id);
       while (queue.length) {
@@ -1009,7 +903,6 @@ export default function HexMap() {
       const gridMinY = minY - spacing * 0.5;
       const gridMaxY = maxY + spacing * 0.5;
       let rowIdx = 0;
-      let symbolIdx = 0;
       for (let gx = gridMinX; gx <= gridMaxX; gx += spacing) {
         const gridX = Math.round((gx - gridMinX) / spacing);
         for (let gy = gridMinY; gy <= gridMaxY; gy += spacing * 0.9) {
@@ -1103,6 +996,37 @@ export default function HexMap() {
     return d;
   }
 
+  // Update map dimensions and generate map
+  useEffect(() => {
+    const updateMapWithDimensions = () => {
+      const { width, height } = calculateMapDimensions();
+      setMapWidth(width);
+      setMapHeight(height);
+    };
+
+    updateMapWithDimensions();
+    window.addEventListener('resize', updateMapWithDimensions);
+    
+    return () => window.removeEventListener('resize', updateMapWithDimensions);
+  }, [calculateMapDimensions]);
+
+  // Generate map when dimensions or seed change
+  useEffect(() => {
+    if (mapWidth > 0 && mapHeight > 0) {
+      generateMap();
+    }
+  }, [mapWidth, mapHeight, seed, generateMap]);
+
+  // Fix type issues in event handlers
+  const handleMouseEnter = (event: React.MouseEvent<SVGElement>) => {
+    const id = event.currentTarget.getAttribute('data-id');
+    setHoveredTile(id);
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredTile(null);
+  };
+
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#4A90E2' }}>
       {/* Header with Title */}
@@ -1115,7 +1039,7 @@ export default function HexMap() {
       {/* Floating Generate Button (restored, fixed top-left) */}
       <div className="fixed top-4 left-4 z-20">
         <button
-          onClick={() => { const s = randomSeed(); setSeed(s); setSeedInput(s); }}
+          onClick={() => { const s = randomSeed(); setSeed(s); }}
           className="w-10 h-10 flex items-center justify-center bg-[#4A90E2] hover:bg-[#3573b5] transition-colors border-2 border-[#3573b5] rounded-full shadow"
           title="Generate New Map"
           aria-label="Generate New Map"
@@ -1309,8 +1233,9 @@ export default function HexMap() {
                     stroke="none"
                     strokeWidth="0"
                     className="cursor-pointer"
-                    onMouseEnter={() => setHoveredTile(tile.id)}
-                    onMouseLeave={() => setHoveredTile(null)}
+                    onMouseEnter={handleMouseEnter}
+                    onMouseLeave={handleMouseLeave}
+                    data-id={tile.id}
                   />
                 );
               })}
@@ -1386,11 +1311,11 @@ export default function HexMap() {
                 // 1. Find all forest tiles
                 const forestTiles = tiles.filter(t => t.terrain === TerrainType.FOREST && !t.settlement);
                 const visited = new Set<string>();
-                const clusters: any[] = [];
+                const clusters: HexTile[][] = [];
                 // 2. BFS to find contiguous clusters
                 for (const tile of forestTiles) {
                   if (visited.has(tile.id)) continue;
-                  const cluster: any[] = [];
+                  const cluster: HexTile[] = [];
                   const queue = [tile];
                   visited.add(tile.id);
                   while (queue.length) {
@@ -1435,11 +1360,11 @@ export default function HexMap() {
                 function brushTerrainSymbols(terrain: TerrainType, symbolId: string, sizeRange: [number, number]) {
                   const terrainTiles = tiles.filter(t => t.terrain === terrain && !t.settlement);
                   const visited = new Set<string>();
-                  const clusters: any[] = [];
+                  const clusters: HexTile[][] = [];
                   // 2. BFS to find contiguous clusters
                   for (const tile of terrainTiles) {
                     if (visited.has(tile.id)) continue;
-                    const cluster: any[] = [];
+                    const cluster: HexTile[] = [];
                     const queue = [tile];
                     visited.add(tile.id);
                     while (queue.length) {
@@ -1701,46 +1626,7 @@ export default function HexMap() {
                 if (!region) {
                   region = { q0: 0, r0: mapHeight - scanHeight, w: scanWidth, h: scanHeight, side: 'left' };
                 }
-                // Calculate pixel position and scale
-                const { q0, r0, w, h, side } = region;
-                // Center of region in pixel coords
-                const centerQ = q0 + w / 2;
-                const centerR = r0 + h / 2;
-                const center = axialToPixel(centerQ, centerR);
-                // Scale windrose+name to fit region
-                const regionPxW = hexSize * 1.5 * w;
-                const regionPxH = hexSize * Math.sqrt(3) * 0.7 * h;
-                let windroseSize = Math.max(minSize, Math.min(maxSize, Math.min(regionPxW, regionPxH) - padding));
-                let titleHeight = windroseSize * 0.38;
-                let totalHeight = windroseSize + titleHeight;
-                let scale = Math.min(1, (regionPxH - padding) / totalHeight, (regionPxW - padding) / windroseSize);
-                // Add a line break after the first word or after 'of'
-                let nameLines = mapName.split(' ');
-                let breakIdx = nameLines.indexOf('of') !== -1 ? nameLines.indexOf('of') + 1 : 1;
-                const line1 = nameLines.slice(0, breakIdx).join(' ');
-                const line2 = nameLines.slice(breakIdx).join(' ');
                 return null; // Windrose moved to separate component
-                return (
-                  <g style={{ mixBlendMode: 'multiply' }}>
-                    <g transform={`translate(${center.x - windroseSize / 2},${center.y - totalHeight / 2}) scale(${scale},${scale * 0.85})`}>
-                      <use href="#windrose" x={0} y={0} width={windroseSize} height={windroseSize} opacity={0.55} />
-                    </g>
-                    <g transform={`translate(${center.x},${center.y + windroseSize * 0.45}) scale(${scale},${scale * 0.85})`}>
-                      <text
-                        x={0}
-                        y={54}
-                        fontFamily="Georgia, Times, serif"
-                        fontSize={Math.round(windroseSize * 0.16)}
-                        fill="#4a6fa5"
-                        style={{ fontStyle: 'normal', letterSpacing: '0.5px', mixBlendMode: 'multiply' }}
-                        textAnchor="middle"
-                      >
-                        <tspan x={0} dy="0">{line1}</tspan>
-                        <tspan x={0} dy="1.2em">{line2}</tspan>
-                      </text>
-                    </g>
-                  </g>
-                );
               })()}
 
               {/* Layer 2.5: Roads (smoothed paths) */}
