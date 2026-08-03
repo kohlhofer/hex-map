@@ -1,6 +1,10 @@
 # Hex Map Generator
 
-A beautiful, interactive hex map generator built with Next.js and TypeScript. Generate fantasy maps with different terrain types, settlements, and roads.
+**Live at [kohlhofer.com/hex-map](https://kohlhofer.com/hex-map/)**
+
+A free hex map maker for tabletop RPGs and worldbuilding, built with Next.js and TypeScript. Press the button and it generates an island: procedural terrain across a hex grid, settlements placed where the land suits them, and roads routed between them.
+
+Runs entirely in the browser. No account, no server, nothing stored.
 
 ## Features
 
@@ -68,35 +72,27 @@ All build commands generate static files in the `out/` directory that can be:
 
 ## Deployment
 
-### Dynamic Hosting (Recommended)
-- **Vercel**: Connect your GitHub repository for automatic deployments
-- **Netlify**: Deploy directly from Git with automatic builds
-- **Railway/Render**: Full Next.js hosting with server-side features
+This repository deploys itself. `.github/workflows/deploy.yml` runs
+`npm run build:github-pages` on every push to `main` and publishes `out/` to
+GitHub Pages, which serves it at
+[kohlhofer.com/hex-map](https://kohlhofer.com/hex-map/).
 
-### Static Hosting
-After running the appropriate build command:
-- **GitHub Pages**: Use `npm run build:github-pages`, then deploy the `out/` folder to your `gh-pages` branch
-- **AWS S3 + CloudFront**: Upload the `out/` folder contents
-- **Google Cloud Storage**: Upload static files from `out/` directory  
-- **Azure Static Web Apps**: Deploy the `out/` folder
-- **Any web server**: Upload the `out/` folder contents to your server's web directory
+The base path matters: this is a *project* Pages site, served from `/hex-map/`
+rather than a domain root. `NEXT_PUBLIC_BASE_PATH` sets Next's `basePath` and
+`assetPrefix` (see `next.config.mjs`). Build without it and every asset URL is
+absolute to `/` and 404s once deployed.
 
-#### GitHub Pages Deployment Example
-```bash
-# Build for GitHub Pages
-npm run build:github-pages
-
-# The out/ directory now contains files ready for GitHub Pages
-# Deploy these to your gh-pages branch or configure GitHub Pages to use this output
-```
+For anywhere else, `npm run build:static` produces a root-relative `out/` that
+can be uploaded to any static host.
 
 ## Technology Stack
 
-- **Next.js 14**: React framework with App Router
+- **Next.js 14**: React framework with App Router, static export
 - **TypeScript**: Type-safe JavaScript
-- **Tailwind CSS**: Utility-first CSS framework
+- **Tailwind CSS v4**: Utility-first CSS, via `@tailwindcss/postcss`
+- **Geist**: fonts via the standalone `geist` package rather than
+  `next/font/google` — Geist only became a Google-font entry in Next 15
 - **SVG Graphics**: Custom terrain and settlement symbols
-- **Canvas API**: Hex grid rendering and interactions
 
 ## Project Structure
 

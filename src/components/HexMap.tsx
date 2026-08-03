@@ -1029,11 +1029,14 @@ export default function HexMap() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#4A90E2' }}>
-      {/* Header with Title */}
+      {/* The generated map's name, so an h2 rather than an h1: it changes on
+          every click and names the artefact, not the page. The page's h1 lives
+          in page.tsx and names the tool — a crawler was previously reading
+          "The Dark Island of Frostmere" as the subject of the whole page. */}
       <div className="w-full py-8 text-center">
-        <h1 className="text-2xl font-serif text-[#223344] opacity-80 italic tracking-wide">
+        <h2 className="text-2xl font-serif text-[#223344] opacity-80 italic tracking-wide">
           {mapName}
-        </h1>
+        </h2>
       </div>
 
       {/* Floating Generate Button (restored, fixed top-left) */}
