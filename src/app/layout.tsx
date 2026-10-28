@@ -10,22 +10,28 @@ import "./globals.css";
 const SITE = "https://kohlhofer.com/hex-map/";
 const TITLE = "Hex Map Generator — make a fantasy hexmap in one click";
 const DESCRIPTION =
-  "A free hex map maker for tabletop RPGs and worldbuilding. Generates procedural terrain, settlements, and roads on a hex grid — click once for a new island. Open source, runs in your browser.";
+  "A free online hex map maker for D&D, tabletop RPGs and worldbuilding. Click once for a new random island: terrain, settlements and roads on a hex grid. Open source, runs in your browser.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kohlhofer.com"),
   title: TITLE,
   description: DESCRIPTION,
-  // "hexmap" (one word) and "maker" earn impressions on this page today
-  // without appearing anywhere in its copy. They belong in the text as well
-  // as here — see page.tsx.
+  // Google ignores this tag, but it is the one place the long tail can live
+  // without cluttering the copy: "hexmap" (one word) and "maker" earn
+  // impressions on this page today. The terms that matter show up in the
+  // visible text as well — see page.tsx.
   keywords: [
     "hex map generator",
     "hex map maker",
+    "hex map creator",
     "hexmap generator",
     "hexmap maker",
     "hex grid map maker",
     "hexagon map generator",
+    "hexagon map maker",
+    "free hex map maker",
+    "free online hex map generator",
+    "dnd hex map maker",
     "fantasy map generator",
     "tabletop RPG map",
     "procedural generation",
@@ -61,10 +67,11 @@ const softwareSchema = {
   isAccessibleForFree: true,
   featureList: [
     "Procedural hex grid terrain — water, mountains, forest, grassland, hills, desert, swamp, brush",
+    "Random generation — every click draws a new island",
     "Settlement generation with cities, towns, and villages",
     "Road networks routed between settlements",
     "Hand-drawn SVG terrain symbols",
-    "Runs entirely in the browser, nothing to install",
+    "Runs entirely in the browser, nothing to install, works on any device",
   ],
 };
 
